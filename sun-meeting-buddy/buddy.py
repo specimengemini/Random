@@ -22,12 +22,17 @@ import argparse
 import math
 import os
 import random
+import shutil
+import subprocess
 import sys
 import tkinter as tk
 from datetime import datetime
 
+__version__ = "2.1  (soft-ding build)"
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MASCOT_PATH = os.path.join(HERE, "assets", "mascot.png")
+DING_PATH = os.path.join(HERE, "assets", "ding.wav")
 
 KEY = "#FF00FF"          # magenta color-key -> becomes transparent + click-through
 KEY_RGB = (255, 0, 255)
@@ -48,12 +53,13 @@ HYPE_LINES = [
 
 
 class SunBuddy:
-    def __init__(self, every_min, snooze_min, linger_s, show_now, mascot_h):
+    def __init__(self, every_min, snooze_min, linger_s, show_now, mascot_h, muted=False):
         self.interval_ms = int(every_min * 60_000)
         self.every_min = every_min
         self.snooze_min = snooze_min
         self.linger_ms = int(linger_s * 1000)
         self.mascot_h = mascot_h
+        self.muted = muted
 
         self.root = tk.Tk()
         self.root.withdraw()
@@ -94,6 +100,31 @@ class SunBuddy:
                     ctypes.windll.user32.SetProcessDPIAware()
             except Exception:
                 pass
+
+    def _ding(self):
+        """Play a soft bell, non-blocking, best-effort across platforms."""
+        if self.muted or not os.path.exists(DING_PATH):
+            return
+        try:
+            if sys.platform.startswith("win"):
+                import winsound
+                winsound.PlaySound(DING_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["afplay", DING_PATH],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                for player in ("paplay", "aplay", "ffplay"):
+                    exe = shutil.which(player)
+                    if exe:
+                        cmd = [exe, DING_PATH]
+                        if player == "ffplay":
+                            cmd = [exe, "-nodisp", "-autoexit", "-loglevel", "quiet", DING_PATH]
+                        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        break
+                else:
+                    print("\a", end="", flush=True)  # terminal bell fallback
+        except Exception:
+            pass
 
     def _work_area(self):
         """(left, top, right, bottom) of usable screen, excluding the taskbar."""
@@ -220,9 +251,16 @@ class SunBuddy:
                 label=f"every {n} min", value=n,
                 command=lambda n=n: self._set_interval(n))
         m.add_cascade(label="⏰  Remind me…", menu=sub)
+        self._sound_var = tk.BooleanVar(value=not self.muted)
+        m.add_checkbutton(label="\U0001F514  Ding on arrival",
+                          variable=self._sound_var, command=self._toggle_sound)
         m.add_separator()
         m.add_command(label="✖  Quit Sun Buddy", command=self._quit)
         self.menu = m
+
+    def _toggle_sound(self):
+        self.muted = not self._sound_var.get()
+        print(f"[sun-buddy] ding {'off' if self.muted else 'on'}", flush=True)
 
     # -- scheduling ----------------------------------------------------------
     def _schedule(self, delay_ms):
@@ -255,6 +293,7 @@ class SunBuddy:
         self.win.deiconify()
         self.win.lift()
         self.win.attributes("-topmost", True)
+        self._ding()
 
         # kick off the bounce
         self.state = "bounce"
@@ -342,6 +381,7 @@ class SunBuddy:
 
     # -- run -----------------------------------------------------------------
     def run(self):
+        print(f"[sun-buddy] Sun Meeting Buddy v{__version__}", flush=True)
         print("[sun-buddy] running ☀️  He'll bounce up on schedule.\n"
               "[sun-buddy] click him for options, or Ctrl+C here to stop.",
               flush=True)
@@ -354,6 +394,9 @@ class SunBuddy:
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="A cut-out sun mascot that bounces up to keep you punctual.")
+    ap.add_argument("--version", action="version",
+                    version=f"Sun Meeting Buddy v{__version__}")
+    ap.add_argument("--mute", action="store_true", help="silence the soft ding")
     ap.add_argument("--every", type=float, default=30, metavar="MIN",
                     help="minutes between visits (default: 30)")
     ap.add_argument("--snooze", type=float, default=5, metavar="MIN",
@@ -370,7 +413,7 @@ def main(argv=None):
         sys.exit(f"[sun-buddy] missing mascot image at {MASCOT_PATH}")
 
     SunBuddy(every_min=args.every, snooze_min=args.snooze, linger_s=args.linger,
-             show_now=args.now, mascot_h=args.size).run()
+             show_now=args.now, mascot_h=args.size, muted=args.mute).run()
 
 
 if __name__ == "__main__":

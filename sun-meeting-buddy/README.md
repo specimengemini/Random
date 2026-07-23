@@ -13,9 +13,27 @@ just the little guy himself, with a tiny speech bubble.
 - ⏰ **Remind me…** — change how often he visits (10–60 min), live
 - ✖ **Quit Sun Buddy**
 
-He bounces in to grab your attention, does a gentle idle bob, and quietly
-retreats after a minute if you ignore him (configurable). Press `Esc` to
-dismiss him too.
+He bounces in with a **soft ding** to grab your attention, does a gentle idle
+bob, and quietly retreats after a minute if you ignore him (configurable).
+Press `Esc` to dismiss him too. The menu also has a **🔔 Ding on arrival**
+toggle if you want him silent.
+
+## Checking your version
+
+To be sure your copy is up to date, run:
+```bash
+python buddy.py --version
+```
+The current build prints:
+```
+Sun Meeting Buddy v2.1  (soft-ding build)
+```
+The version also prints in the first line when you launch it. If you see an
+older version (or `--version` isn't recognized), pull the latest:
+```bash
+git pull origin claude/meeting-reminder-app-6mhbkx
+```
+or re-download the branch ZIP from GitHub and replace your folder.
 
 ## Run it
 
@@ -48,7 +66,9 @@ terminal open — that's what keeps him running. Press `Ctrl+C` there to stop.
 | `--snooze MIN` | Minutes the main snooze adds | `5` |
 | `--linger SEC` | Seconds before he auto-hides; `0` = stay until clicked | `60` |
 | `--size PX` | Mascot height in pixels | `190` |
+| `--mute` | Start with the ding silenced | off |
 | `--now` | Also bounce up immediately on launch | off |
+| `--version` | Print the version and exit | — |
 
 Examples:
 ```bash
