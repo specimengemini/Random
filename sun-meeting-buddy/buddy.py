@@ -28,7 +28,7 @@ import sys
 import tkinter as tk
 from datetime import datetime
 
-__version__ = "2.2  (bigger + renamed Sunny)"
+__version__ = "2.3  (Ctrl+C fix)"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MASCOT_PATH = os.path.join(HERE, "assets", "mascot.png")
@@ -380,15 +380,31 @@ class SunBuddy:
             pass
 
     # -- run -----------------------------------------------------------------
+    def _pulse(self):
+        # Keep the Python interpreter ticking during Tk's event loop so an
+        # incoming Ctrl+C (SIGINT) actually gets delivered instead of being
+        # swallowed by the C-level loop.
+        self.root.after(200, self._pulse)
+
+    def _on_sigint(self, *_):
+        print("\n[sunny] bye! stay punctual ☀️", flush=True)
+        self._quit()
+
     def run(self):
         print(f"[sunny] Sunny Bad Buddy Timer v{__version__}", flush=True)
         print("[sunny] running ☀️  He'll bounce up on schedule.\n"
-              "[sunny] click him for options, or Ctrl+C here to stop.",
+              "[sunny] click him for options, Esc, or Ctrl+C here to stop.",
               flush=True)
+        try:
+            import signal
+            signal.signal(signal.SIGINT, self._on_sigint)
+        except (ValueError, ImportError):
+            pass  # not on the main thread / unsupported -> menu Quit still works
+        self._pulse()
         try:
             self.root.mainloop()
         except KeyboardInterrupt:
-            print("\n[sunny] bye! stay punctual ☀️")
+            self._on_sigint()
 
 
 def main(argv=None):

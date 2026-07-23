@@ -26,7 +26,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.2  (bigger + renamed Sunny)
+Sunny Bad Buddy Timer v2.3  (Ctrl+C fix)
 ```
 The version also prints in the first line when you launch it. If you see an
 older version (or `--version` isn't recognized), pull the latest:
@@ -65,6 +65,13 @@ Want him on your Desktop? **Double-click `Create Desktop Shortcut.bat`** and it
 drops a *Sunny Bad Buddy Timer* shortcut (with his face as the icon) on your
 Desktop. To launch him automatically at login, press `Win+R`, type
 `shell:startup`, and drag that shortcut into the folder that opens.
+
+### Stopping him
+
+- **From his menu:** click him → **Quit Sunny Bad Buddy Timer**. (Always works.)
+- **From a terminal:** if you launched with `python buddy.py`, press **Ctrl+C**.
+- **Double-click `Stop Sunny.bat`:** handy when you started him by double-click
+  (no terminal to Ctrl+C in). It only stops Sunny, not other Python programs.
 
 `--now` makes him bounce up immediately so you can see it working. Leave the
 terminal open — that's what keeps him running. Press `Ctrl+C` there to stop.
