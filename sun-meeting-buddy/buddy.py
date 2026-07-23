@@ -28,9 +28,14 @@ import sys
 import tkinter as tk
 from datetime import datetime
 
-__version__ = "2.3  (Ctrl+C fix)"
+__version__ = "2.4  (standalone .exe)"
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
+# otherwise they sit next to this script.
+if getattr(sys, "frozen", False):
+    HERE = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+else:
+    HERE = os.path.dirname(os.path.abspath(__file__))
 MASCOT_PATH = os.path.join(HERE, "assets", "mascot.png")
 DING_PATH = os.path.join(HERE, "assets", "ding.wav")
 
@@ -420,7 +425,7 @@ def main(argv=None):
     ap.add_argument("--linger", type=float, default=60, metavar="SEC",
                     help="seconds to stay before auto-hiding; 0 = until clicked (default: 60)")
     ap.add_argument("--size", type=int, default=380, metavar="PX",
-                    help="mascot height in pixels (default: 190)")
+                    help="mascot height in pixels (default: 380)")
     ap.add_argument("--now", action="store_true",
                     help="also bounce up immediately on launch")
     args = ap.parse_args(argv)
@@ -428,8 +433,11 @@ def main(argv=None):
     if not os.path.exists(MASCOT_PATH):
         sys.exit(f"[sunny] missing mascot image at {MASCOT_PATH}")
 
+    # A double-clicked .exe passes no flags, so greet the user right away.
+    show_now = args.now or getattr(sys, "frozen", False)
+
     SunBuddy(every_min=args.every, snooze_min=args.snooze, linger_s=args.linger,
-             show_now=args.now, mascot_h=args.size, muted=args.mute).run()
+             show_now=show_now, mascot_h=args.size, muted=args.mute).run()
 
 
 if __name__ == "__main__":

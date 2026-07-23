@@ -55,6 +55,21 @@ or directly:
 python buddy.py --now
 ```
 
+### Make a standalone .exe (no Python folder needed)
+
+Want a single app file you can double-click, move anywhere, or share — with no
+visible Python? **Double-click `Build EXE.bat`** once. It installs the build
+tool and produces:
+
+```
+dist\SunnyBadBuddyTimer.exe
+```
+
+Double-click that `.exe` to run Sunny (he shows up right away, then every 30
+minutes). You can move it to your Desktop, or right-click → **Pin to Taskbar**.
+Building needs Python installed *once* to do the build; running the finished
+`.exe` does not.
+
 ### Easiest: double-click, no typing
 
 On Windows, just **double-click `Sunny Bad Buddy Timer.bat`** — Sunny bounces up
