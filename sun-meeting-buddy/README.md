@@ -1,4 +1,4 @@
-# ☀️ Sun Meeting Buddy
+# ☀️ Sunny Bad Buddy Timer
 
 A cut-out sun mascot who **bounces up from the bottom of your screen** every
 30 minutes to remind you to make your meetings on time. No window, no card —
@@ -26,7 +26,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sun Meeting Buddy v2.1  (soft-ding build)
+Sunny Bad Buddy Timer v2.2  (bigger + renamed Sunny)
 ```
 The version also prints in the first line when you launch it. If you see an
 older version (or `--version` isn't recognized), pull the latest:
@@ -55,6 +55,17 @@ or directly:
 python buddy.py --now
 ```
 
+### Easiest: double-click, no typing
+
+On Windows, just **double-click `Sunny Bad Buddy Timer.bat`** — Sunny bounces up
+right away (no console window) and keeps going every 30 minutes. Stop him from
+his click-menu → **Quit Sunny Bad Buddy Timer**.
+
+Want him on your Desktop? **Double-click `Create Desktop Shortcut.bat`** and it
+drops a *Sunny Bad Buddy Timer* shortcut (with his face as the icon) on your
+Desktop. To launch him automatically at login, press `Win+R`, type
+`shell:startup`, and drag that shortcut into the folder that opens.
+
 `--now` makes him bounce up immediately so you can see it working. Leave the
 terminal open — that's what keeps him running. Press `Ctrl+C` there to stop.
 
@@ -65,7 +76,7 @@ terminal open — that's what keeps him running. Press `Ctrl+C` there to stop.
 | `--every MIN` | Minutes between visits | `30` |
 | `--snooze MIN` | Minutes the main snooze adds | `5` |
 | `--linger SEC` | Seconds before he auto-hides; `0` = stay until clicked | `60` |
-| `--size PX` | Mascot height in pixels | `190` |
+| `--size PX` | Mascot height in pixels | `380` |
 | `--mute` | Start with the ding silenced | off |
 | `--now` | Also bounce up immediately on launch | off |
 | `--version` | Print the version and exit | — |
@@ -75,7 +86,7 @@ Examples:
 python buddy.py --now                 # see him right away
 python buddy.py --every 15            # visit every 15 minutes
 python buddy.py --linger 0           # stay put until I click him
-python buddy.py --size 240           # make him bigger
+python buddy.py --size 240           # make him smaller than the default 380
 ```
 
 ## A note on transparency

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sun Meeting Buddy
+Sunny Bad Buddy Timer
 =================
 A cut-out sun mascot who bounces up from the bottom of your screen on a
 timer (every 30 minutes by default) to remind you to make your meetings on
@@ -28,7 +28,7 @@ import sys
 import tkinter as tk
 from datetime import datetime
 
-__version__ = "2.1  (soft-ding build)"
+__version__ = "2.2  (bigger + renamed Sunny)"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MASCOT_PATH = os.path.join(HERE, "assets", "mascot.png")
@@ -255,12 +255,12 @@ class SunBuddy:
         m.add_checkbutton(label="\U0001F514  Ding on arrival",
                           variable=self._sound_var, command=self._toggle_sound)
         m.add_separator()
-        m.add_command(label="✖  Quit Sun Buddy", command=self._quit)
+        m.add_command(label="✖  Quit Sunny Bad Buddy Timer", command=self._quit)
         self.menu = m
 
     def _toggle_sound(self):
         self.muted = not self._sound_var.get()
-        print(f"[sun-buddy] ding {'off' if self.muted else 'on'}", flush=True)
+        print(f"[sunny] ding {'off' if self.muted else 'on'}", flush=True)
 
     # -- scheduling ----------------------------------------------------------
     def _schedule(self, delay_ms):
@@ -270,7 +270,7 @@ class SunBuddy:
 
     def _log_next(self, delay_ms):
         mins = delay_ms / 60000
-        print(f"[sun-buddy] next visit in ~{mins:.0f} min", flush=True)
+        print(f"[sunny] next visit in ~{mins:.0f} min", flush=True)
 
     def _tick(self):
         self._appear()
@@ -281,7 +281,7 @@ class SunBuddy:
         self.every_min = n
         self.interval_ms = int(n * 60_000)
         self._schedule(self.interval_ms)
-        print(f"[sun-buddy] interval set to {n} min", flush=True)
+        print(f"[sunny] interval set to {n} min", flush=True)
 
     # -- show / hide ---------------------------------------------------------
     def _appear(self):
@@ -371,7 +371,7 @@ class SunBuddy:
     def _snooze(self, minutes):
         self._dismiss()
         self._schedule(int(minutes * 60_000))
-        print(f"[sun-buddy] snoozed {int(minutes)} min", flush=True)
+        print(f"[sunny] snoozed {int(minutes)} min", flush=True)
 
     def _quit(self):
         try:
@@ -381,21 +381,21 @@ class SunBuddy:
 
     # -- run -----------------------------------------------------------------
     def run(self):
-        print(f"[sun-buddy] Sun Meeting Buddy v{__version__}", flush=True)
-        print("[sun-buddy] running ☀️  He'll bounce up on schedule.\n"
-              "[sun-buddy] click him for options, or Ctrl+C here to stop.",
+        print(f"[sunny] Sunny Bad Buddy Timer v{__version__}", flush=True)
+        print("[sunny] running ☀️  He'll bounce up on schedule.\n"
+              "[sunny] click him for options, or Ctrl+C here to stop.",
               flush=True)
         try:
             self.root.mainloop()
         except KeyboardInterrupt:
-            print("\n[sun-buddy] bye! stay punctual ☀️")
+            print("\n[sunny] bye! stay punctual ☀️")
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="A cut-out sun mascot that bounces up to keep you punctual.")
     ap.add_argument("--version", action="version",
-                    version=f"Sun Meeting Buddy v{__version__}")
+                    version=f"Sunny Bad Buddy Timer v{__version__}")
     ap.add_argument("--mute", action="store_true", help="silence the soft ding")
     ap.add_argument("--every", type=float, default=30, metavar="MIN",
                     help="minutes between visits (default: 30)")
@@ -403,14 +403,14 @@ def main(argv=None):
                     help="minutes the main snooze adds (default: 5)")
     ap.add_argument("--linger", type=float, default=60, metavar="SEC",
                     help="seconds to stay before auto-hiding; 0 = until clicked (default: 60)")
-    ap.add_argument("--size", type=int, default=190, metavar="PX",
+    ap.add_argument("--size", type=int, default=380, metavar="PX",
                     help="mascot height in pixels (default: 190)")
     ap.add_argument("--now", action="store_true",
                     help="also bounce up immediately on launch")
     args = ap.parse_args(argv)
 
     if not os.path.exists(MASCOT_PATH):
-        sys.exit(f"[sun-buddy] missing mascot image at {MASCOT_PATH}")
+        sys.exit(f"[sunny] missing mascot image at {MASCOT_PATH}")
 
     SunBuddy(every_min=args.every, snooze_min=args.snooze, linger_s=args.linger,
              show_now=args.now, mascot_h=args.size, muted=args.mute).run()

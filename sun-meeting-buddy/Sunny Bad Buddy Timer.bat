@@ -1,8 +1,8 @@
 @echo off
 REM ============================================================
-REM  Double-click this to start Sun Meeting Buddy.
+REM  Double-click this to start Sunny Bad Buddy Timer.
 REM  He bounces up once right away, then every 30 minutes.
-REM  Stop him any time: click him -> "Quit Sun Buddy".
+REM  Stop him any time: click him -> "Quit Sunny Bad Buddy Timer".
 REM ============================================================
 cd /d "%~dp0"
 
