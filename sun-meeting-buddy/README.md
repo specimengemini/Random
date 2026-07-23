@@ -1,65 +1,81 @@
 # ☀️ Sun Meeting Buddy
 
-A cheerful desktop mascot who slides into the corner of your screen **every
-30 minutes** to nudge you toward your next meeting — so you're never the one
-joining late.
+A cut-out sun mascot who **bounces up from the bottom of your screen** every
+30 minutes to remind you to make your meetings on time. No window, no card —
+just the little guy himself, with a tiny speech bubble.
 
 ![the buddy in action](assets/preview.png)
 
-He shows up bottom-right, throws you a hype line, tells you the time, and gives
-you two choices: **On my way! ✅** or **Snooze 5m 😴**. Drag him around, or hit
-`Esc` to dismiss.
+**Click him** to open his menu:
+
+- ✅ **On my way!** — dismiss until the next visit
+- 😴 **Snooze 5 min** / **Snooze 15 min**
+- ⏰ **Remind me…** — change how often he visits (10–60 min), live
+- ✖ **Quit Sun Buddy**
+
+He bounces in to grab your attention, does a gentle idle bob, and quietly
+retreats after a minute if you ignore him (configurable). Press `Esc` to
+dismiss him too.
 
 ## Run it
 
-You need Python 3 (which ships with Tkinter on Windows and macOS). No other
-libraries required.
-
-**macOS / Linux**
-```bash
-./run.sh
-```
+Needs Python 3 (Tkinter is included with the standard Windows/macOS installers).
+No other libraries required.
 
 **Windows**
 ```bat
-run.bat
+run.bat --now
 ```
 
-or directly, anywhere:
+**macOS / Linux**
 ```bash
-python3 buddy.py
+./run.sh --now
 ```
 
-Leave the terminal window open — that's what keeps him running. Press
-`Ctrl+C` there to stop.
+or directly:
+```bash
+python buddy.py --now
+```
+
+`--now` makes him bounce up immediately so you can see it working. Leave the
+terminal open — that's what keeps him running. Press `Ctrl+C` there to stop.
 
 ## Options
 
 | Flag | What it does | Default |
 |------|--------------|---------|
-| `--every MIN` | Minutes between pop-ups | `30` |
-| `--snooze MIN` | Minutes the snooze button adds | `5` |
-| `--now` | Also pop up immediately on launch (nice for a test) | off |
+| `--every MIN` | Minutes between visits | `30` |
+| `--snooze MIN` | Minutes the main snooze adds | `5` |
+| `--linger SEC` | Seconds before he auto-hides; `0` = stay until clicked | `60` |
+| `--size PX` | Mascot height in pixels | `190` |
+| `--now` | Also bounce up immediately on launch | off |
 
 Examples:
 ```bash
-python3 buddy.py --now              # see him right away
-python3 buddy.py --every 15         # remind me every 15 minutes
-python3 buddy.py --every 25 --snooze 3
+python buddy.py --now                 # see him right away
+python buddy.py --every 15            # visit every 15 minutes
+python buddy.py --linger 0           # stay put until I click him
+python buddy.py --size 240           # make him bigger
 ```
 
-## Want him to start automatically at login?
+## A note on transparency
 
-- **macOS:** System Settings → General → Login Items → **+** → pick `run.sh`
-  (or add a `launchd` plist).
+The clean, no-background cut-out uses a color-key transparency trick that works
+great on **Windows** (he's also click-through — clicking empty space around him
+goes to whatever's behind). On **macOS/Linux**, where that isn't supported, he
+falls back to a small soft card so the app still works everywhere.
+
+## Start him automatically at login
+
 - **Windows:** press `Win+R`, type `shell:startup`, and drop a shortcut to
   `run.bat` in that folder.
-- **Linux:** add `run.sh` to your desktop environment's *Startup Applications*.
+- **macOS:** System Settings → General → Login Items → **+** → pick `run.sh`.
+- **Linux:** add `run.sh` to your desktop's *Startup Applications*.
 
 ## Notes
 
 - **Zero dependencies.** Pure standard-library Tkinter. If you happen to have
-  [Pillow](https://python-pillow.org/) installed, he'll use it for marginally
-  smoother image scaling — but it's completely optional.
+  [Pillow](https://python-pillow.org/) installed, the cut-out edges are a touch
+  cleaner — but it's entirely optional.
 - The mascot art lives in `assets/mascot.png` — swap in any transparent PNG to
   change your buddy.

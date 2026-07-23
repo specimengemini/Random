@@ -2,219 +2,349 @@
 """
 Sun Meeting Buddy
 =================
-A cheerful desktop mascot who pops up on a timer (every 30 minutes by
-default) to nudge you toward your next meeting so you show up on time.
+A cut-out sun mascot who bounces up from the bottom of your screen on a
+timer (every 30 minutes by default) to remind you to make your meetings on
+time. No card, no window chrome -- just the little guy himself. **Click him**
+to open a menu: On my way, Snooze, change the interval, or quit.
 
-Pure standard-library Tkinter -- no dependencies required. If Pillow is
-installed it is used for nicer image scaling, but it is entirely optional.
+Pure standard-library Tkinter. Pillow is optional (it just makes the cut-out
+edges a touch cleaner). Transparency is best on Windows; on macOS/Linux it
+falls back to a small floating card so it still works.
 
 Usage:
-    python buddy.py                 # pop up every 30 minutes
-    python buddy.py --every 15      # ...every 15 minutes instead
-    python buddy.py --now           # also show one immediately on launch
-    python buddy.py --snooze 5      # snooze button adds 5 minutes
-
-Quit any time from your terminal with Ctrl+C, or use the "Not now" ->
-tray-less design: closing the popup just hides it until the next tick.
+    python buddy.py                 # bounce up every 30 minutes
+    python buddy.py --now           # ...and once right now (great for testing)
+    python buddy.py --every 15      # every 15 minutes
+    python buddy.py --linger 0      # stay until clicked (default: auto-hide 60s)
 """
 
 import argparse
+import math
 import os
 import random
 import sys
 import tkinter as tk
-from datetime import datetime, timedelta
+from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MASCOT_PATH = os.path.join(HERE, "assets", "mascot.png")
 
-# --- palette (sunny) --------------------------------------------------------
-CARD_BG = "#FFF6D8"      # warm cream card
-ACCENT = "#F5A623"       # sun orange
-ACCENT_DK = "#E0871C"
-INK = "#4A3B10"          # deep warm brown text
-INK_SOFT = "#8A7530"
-BTN_GO = "#2FB170"       # green "on my way"
-BTN_GO_DK = "#26935D"
-BTN_SNOOZE = "#F0E2A8"
+KEY = "#FF00FF"          # magenta color-key -> becomes transparent + click-through
+KEY_RGB = (255, 0, 255)
+BUBBLE_BG = "#FFFFFF"
+BUBBLE_EDGE = "#F5A623"
+BUBBLE_INK = "#4A3B10"
 
 HYPE_LINES = [
-    "Meeting soon, superstar. Let's shine on time. ☀️",
-    "Two minutes early = right on time. You got this!",
-    "Wrap it up, hydrate, and roll into that meeting like a boss.",
-    "The calendar called. It said: be legendary AND punctual.",
-    "Save the tab. Grab the notes. Go make that meeting.",
-    "Big sun energy: warm, bright, and never late.",
-    "Future you is thanking present you for leaving now.",
-    "Peace out of this task ✌️ -- your meeting awaits.",
-    "Stand up, stretch, sparkle. Meeting time is near!",
-    "Be the person who joins the call first. Iconic.",
+    "Meeting soon!\nLet's be on time ☀️",
+    "Two minutes early\nis right on time!",
+    "Wrap it up —\nmeeting's near!",
+    "Save the tab,\njoin the call!",
+    "Be first on\nthe call. Iconic.",
+    "Stand up, shine,\nmeeting time!",
+    "Psst — your\nmeeting misses you.",
+    "Big sun energy:\nnever late ☀️",
 ]
 
 
-class Buddy:
-    def __init__(self, interval_min: float, snooze_min: float, show_now: bool):
-        self.interval_ms = int(interval_min * 60_000)
-        self.snooze_ms = int(snooze_min * 60_000)
+class SunBuddy:
+    def __init__(self, every_min, snooze_min, linger_s, show_now, mascot_h):
+        self.interval_ms = int(every_min * 60_000)
+        self.every_min = every_min
         self.snooze_min = snooze_min
+        self.linger_ms = int(linger_s * 1000)
+        self.mascot_h = mascot_h
 
         self.root = tk.Tk()
-        self.root.withdraw()  # the controller window stays hidden
-        self.root.title("Sun Meeting Buddy")
+        self.root.withdraw()
+        self._enable_dpi_awareness()
 
-        self.image = self._load_image()
-        self.popup = None
-        self._next_tick = None
+        self.win = None            # the mascot Toplevel
+        self.canvas = None
+        self.photo = None
+        self.transparent_ok = False
+        self.win_w = self.win_h = 0
+        self.mascot_bottom_pad = 0
 
-        first_delay = 200 if show_now else self.interval_ms
-        self._schedule(first_delay)
-        self._log_next(first_delay)
+        self._tick_job = None
+        self._anim_job = None
+        self._linger_job = None
+        self._menu_open = False
+
+        # bounce/idle physics state
+        self.lift = 0.0            # px above resting position (up = +)
+        self.vy = 0.0
+        self.idle_t = 0.0
+        self.state = "idle"        # "bounce" | "idle"
+
+        self._build_window()
+
+        first = 300 if show_now else self.interval_ms
+        self._schedule(first)
+        self._log_next(first)
+
+    # -- platform helpers ----------------------------------------------------
+    def _enable_dpi_awareness(self):
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+                try:
+                    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+                except Exception:
+                    ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+
+    def _work_area(self):
+        """(left, top, right, bottom) of usable screen, excluding the taskbar."""
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+                from ctypes import wintypes
+                r = wintypes.RECT()
+                # SPI_GETWORKAREA = 0x0030
+                ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(r), 0)
+                if r.right > r.left and r.bottom > r.top:
+                    return r.left, r.top, r.right, r.bottom
+            except Exception:
+                pass
+            return 0, 0, sw, sh - 48  # assume a ~48px taskbar
+        return 0, 0, sw, sh - 4
 
     # -- image ---------------------------------------------------------------
-    def _load_image(self):
-        """Return a Tk PhotoImage of the mascot, scaled to a friendly size."""
-        target_w = 300
+    def _load_photo(self):
+        target_h = self.mascot_h
         try:
-            from PIL import Image, ImageTk  # optional, nicer scaling
-            img = Image.open(MASCOT_PATH)
-            h = round(img.height * target_w / img.width)
-            img = img.resize((target_w, h), Image.LANCZOS)
-            # Composite onto the card colour so alpha edges blend cleanly.
-            bg = Image.new("RGBA", img.size, CARD_BG)
-            bg.alpha_composite(img.convert("RGBA"))
-            return ImageTk.PhotoImage(bg.convert("RGB"))
+            from PIL import Image, ImageFilter, ImageTk
+            img = Image.open(MASCOT_PATH).convert("RGBA")
+            w = round(img.width * target_h / img.height)
+            img = img.resize((w, target_h), Image.LANCZOS)
+            a = img.split()[3].point(lambda p: 255 if p >= 128 else 0)
+            a = a.filter(ImageFilter.MinFilter(3))  # erode 1px -> no halo
+            img.putalpha(a)
+            if self.transparent_ok:
+                # bake transparent areas to the color-key so Windows hides them
+                base = Image.new("RGBA", img.size, KEY_RGB + (255,))
+                base.alpha_composite(img)
+                self.photo = ImageTk.PhotoImage(base.convert("RGB"))
+            else:
+                # keep alpha so it blends onto the fallback card
+                self.photo = ImageTk.PhotoImage(img)
         except Exception:
-            # Stdlib fallback: PhotoImage reads PNG (Tk 8.6+) and honours
-            # alpha against the widget background. Subsample to shrink.
             img = tk.PhotoImage(file=MASCOT_PATH)
-            factor = max(1, round(img.width() / target_w))
+            factor = max(1, round(img.height() / target_h))
             if factor > 1:
                 img = img.subsample(factor, factor)
-            return img
+            self.photo = img
+        return self.photo.width(), self.photo.height()
+
+    # -- window construction -------------------------------------------------
+    def _build_window(self):
+        w = tk.Toplevel(self.root)
+        self.win = w
+        w.withdraw()
+        w.overrideredirect(True)
+        w.attributes("-topmost", True)
+
+        # Try real color-key transparency (clean cut-out on Windows).
+        try:
+            w.attributes("-transparentcolor", KEY)
+            w.configure(bg=KEY)
+            self.transparent_ok = True
+            canvas_bg = KEY
+        except tk.TclError:
+            # No color-key here -> soft card fallback so it still runs.
+            self.transparent_ok = False
+            canvas_bg = "#FFF6D8"
+            w.configure(bg=BUBBLE_EDGE)
+
+        mw, mh = self._load_photo()
+        bubble_h = 52
+        gap = 8
+        pad = 6 if self.transparent_ok else 3
+        self.win_w = mw + pad * 2
+        self.win_h = bubble_h + gap + mh + pad * 2
+        self.mascot_bottom_pad = pad
+
+        c = tk.Canvas(w, width=self.win_w, height=self.win_h,
+                      bg=canvas_bg, highlightthickness=0, bd=0)
+        c.pack()
+        self.canvas = c
+
+        cx = self.win_w // 2
+        # speech bubble
+        self._draw_bubble(c, cx, pad, self.win_w - pad * 2, bubble_h)
+        self.bubble_text = c.create_text(
+            cx, pad + bubble_h // 2 - 2, text="", width=self.win_w - pad * 4,
+            font=("Helvetica", 10, "bold"), fill=BUBBLE_INK, justify="center")
+        # mascot
+        self.mascot_img = c.create_image(
+            cx, pad + bubble_h + gap + mh // 2, image=self.photo)
+
+        c.configure(cursor="hand2")
+        c.bind("<Button-1>", self._open_menu)
+        w.bind("<Escape>", lambda _e: self._dismiss())
+
+        self._build_menu()
+
+    def _draw_bubble(self, c, cx, top, width, height):
+        x0 = cx - width // 2
+        y0 = top
+        x1 = cx + width // 2
+        y1 = top + height
+        r = 14
+        fill = BUBBLE_BG if self.transparent_ok else BUBBLE_BG
+        # rounded rectangle via a smoothed polygon
+        pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r,
+               x1, y1, x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r,
+               x0, y0 + r, x0, y0]
+        c.create_polygon(pts, smooth=True, fill=fill,
+                         outline=BUBBLE_EDGE, width=2)
+        # little tail pointing down toward the mascot
+        c.create_polygon(cx - 9, y1 - 1, cx + 9, y1 - 1, cx, y1 + 11,
+                         fill=fill, outline=fill)
+
+    def _build_menu(self):
+        m = tk.Menu(self.root, tearoff=0)
+        m.add_command(label="✅  On my way!", command=self._dismiss)
+        m.add_separator()
+        m.add_command(label=f"\U0001F634  Snooze {int(self.snooze_min)} min",
+                      command=lambda: self._snooze(self.snooze_min))
+        m.add_command(label="\U0001F634  Snooze 15 min",
+                      command=lambda: self._snooze(15))
+        sub = tk.Menu(m, tearoff=0)
+        for n in (10, 15, 20, 30, 45, 60):
+            sub.add_radiobutton(
+                label=f"every {n} min", value=n,
+                command=lambda n=n: self._set_interval(n))
+        m.add_cascade(label="⏰  Remind me…", menu=sub)
+        m.add_separator()
+        m.add_command(label="✖  Quit Sun Buddy", command=self._quit)
+        self.menu = m
 
     # -- scheduling ----------------------------------------------------------
-    def _schedule(self, delay_ms: int):
-        if self._next_tick is not None:
-            self.root.after_cancel(self._next_tick)
-        self._next_tick = self.root.after(delay_ms, self._tick)
+    def _schedule(self, delay_ms):
+        if self._tick_job is not None:
+            self.root.after_cancel(self._tick_job)
+        self._tick_job = self.root.after(delay_ms, self._tick)
 
-    def _log_next(self, delay_ms: int):
-        when = (datetime.now() + timedelta(milliseconds=delay_ms)).strftime("%H:%M")
-        print(f"[sun-buddy] next pop-up at {when}", flush=True)
+    def _log_next(self, delay_ms):
+        mins = delay_ms / 60000
+        print(f"[sun-buddy] next visit in ~{mins:.0f} min", flush=True)
 
     def _tick(self):
-        self._show_popup()
+        self._appear()
         self._schedule(self.interval_ms)
         self._log_next(self.interval_ms)
 
-    # -- popup ---------------------------------------------------------------
-    def _show_popup(self):
-        if self.popup is not None and tk.Toplevel.winfo_exists(self.popup):
-            self.popup.destroy()
+    def _set_interval(self, n):
+        self.every_min = n
+        self.interval_ms = int(n * 60_000)
+        self._schedule(self.interval_ms)
+        print(f"[sun-buddy] interval set to {n} min", flush=True)
 
-        p = tk.Toplevel(self.root)
-        self.popup = p
-        p.overrideredirect(True)          # borderless mascot card
-        p.attributes("-topmost", True)
+    # -- show / hide ---------------------------------------------------------
+    def _appear(self):
+        self.canvas.itemconfigure(self.bubble_text, text=random.choice(HYPE_LINES))
+        left, top, right, bottom = self._work_area()
+        self.rest_x = right - self.win_w - 40
+        self.rest_y = bottom - self.win_h + self.mascot_bottom_pad  # mascot feet ~ on taskbar
+        self.win.geometry(f"{self.win_w}x{self.win_h}+{self.rest_x}+{self.rest_y}")
+        self.win.deiconify()
+        self.win.lift()
+        self.win.attributes("-topmost", True)
+
+        # kick off the bounce
+        self.state = "bounce"
+        self.lift = 0.0
+        self.vy = 900.0          # upward impulse (px/s)
+        self.idle_t = 0.0
+        if self._anim_job is None:
+            self._animate()
+
+        # auto-hide after lingering (unless disabled)
+        if self._linger_job is not None:
+            self.root.after_cancel(self._linger_job)
+        if self.linger_ms > 0:
+            self._linger_job = self.root.after(self.linger_ms, self._retreat_if_idle)
+
+    def _animate(self):
+        dt = 0.016
+        if self.state == "bounce":
+            g = 2600.0
+            self.vy -= g * dt
+            self.lift += self.vy * dt
+            if self.lift <= 0:
+                self.lift = 0.0
+                self.vy = -self.vy * 0.55        # bounce, lose energy
+                if self.vy < 120:                # settled
+                    self.state = "idle"
+                    self.idle_t = 0.0
+        else:  # gentle idle bob
+            self.idle_t += dt
+            self.lift = 3.5 * (1 + math.sin(self.idle_t * 2.2))
+
+        y = int(self.rest_y - self.lift)
         try:
-            p.attributes("-alpha", 0.0)   # for fade-in
+            self.win.geometry(f"+{self.rest_x}+{y}")
+        except tk.TclError:
+            self._anim_job = None
+            return
+        self._anim_job = self.root.after(16, self._animate)
+
+    def _stop_anim(self):
+        if self._anim_job is not None:
+            self.root.after_cancel(self._anim_job)
+            self._anim_job = None
+
+    def _retreat_if_idle(self):
+        if not self._menu_open:
+            self._dismiss()
+
+    def _dismiss(self):
+        self._stop_anim()
+        if self._linger_job is not None:
+            self.root.after_cancel(self._linger_job)
+            self._linger_job = None
+        try:
+            self.win.withdraw()
         except tk.TclError:
             pass
-        p.configure(bg=ACCENT)
 
-        # 2px accent frame around a cream card
-        card = tk.Frame(p, bg=CARD_BG)
-        card.pack(padx=3, pady=3)
-
-        tk.Label(
-            card, image=self.image, bg=CARD_BG, borderwidth=0, highlightthickness=0
-        ).pack(padx=22, pady=(18, 4))
-
-        tk.Label(
-            card, text="Meeting check-in!", bg=CARD_BG, fg=ACCENT_DK,
-            font=("Helvetica", 20, "bold"),
-        ).pack()
-
-        tk.Label(
-            card, text=random.choice(HYPE_LINES), bg=CARD_BG, fg=INK,
-            font=("Helvetica", 12), wraplength=300, justify="center",
-        ).pack(padx=24, pady=(6, 2))
-
-        tk.Label(
-            card, text="It's " + datetime.now().strftime("%I:%M %p").lstrip("0"),
-            bg=CARD_BG, fg=INK_SOFT, font=("Helvetica", 11, "italic"),
-        ).pack(pady=(0, 10))
-
-        btns = tk.Frame(card, bg=CARD_BG)
-        btns.pack(padx=20, pady=(0, 20), fill="x")
-
-        go = tk.Button(
-            btns, text="On my way!  ✅", command=p.destroy,
-            bg=BTN_GO, fg="white", activebackground=BTN_GO_DK,
-            activeforeground="white", font=("Helvetica", 12, "bold"),
-            relief="flat", borderwidth=0, padx=14, pady=9, cursor="hand2",
-        )
-        go.pack(side="left", expand=True, fill="x", padx=(0, 6))
-
-        snooze = tk.Button(
-            btns, text=f"Snooze {int(self.snooze_min)}m  \U0001F634",
-            command=lambda: self._snooze(p),
-            bg=BTN_SNOOZE, fg=INK, activebackground="#E6D48A",
-            activeforeground=INK, font=("Helvetica", 12, "bold"),
-            relief="flat", borderwidth=0, padx=14, pady=9, cursor="hand2",
-        )
-        snooze.pack(side="left", expand=True, fill="x", padx=(6, 0))
-
-        # Let the user drag the card around.
-        self._make_draggable(p, card)
-        for lbl in card.winfo_children():
-            if isinstance(lbl, tk.Label):
-                self._make_draggable(p, lbl)
-
-        # Bottom-right of the screen, with a small margin.
-        p.update_idletasks()
-        sw, sh = p.winfo_screenwidth(), p.winfo_screenheight()
-        w, h = p.winfo_width(), p.winfo_height()
-        x, y = sw - w - 28, sh - h - 60
-        p.geometry(f"+{x}+{y}")
-
-        p.bind("<Escape>", lambda _e: p.destroy())
-        self._fade_in(p)
-
-    def _snooze(self, popup):
-        popup.destroy()
-        self._schedule(self.snooze_ms)
-        self._log_next(self.snooze_ms)
-
-    def _fade_in(self, p, value=0.0):
-        if not tk.Toplevel.winfo_exists(p):
-            return
+    # -- interaction ---------------------------------------------------------
+    def _open_menu(self, event):
+        # extend linger while the user is interacting
+        if self._linger_job is not None:
+            self.root.after_cancel(self._linger_job)
+            self._linger_job = None
+        self._menu_open = True
         try:
-            p.attributes("-alpha", value)
+            self.menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.menu.grab_release()
+            self._menu_open = False
+            # if still visible and linger enabled, restart the countdown
+            if self.linger_ms > 0 and self.win.state() != "withdrawn":
+                self._linger_job = self.root.after(self.linger_ms, self._retreat_if_idle)
+
+    def _snooze(self, minutes):
+        self._dismiss()
+        self._schedule(int(minutes * 60_000))
+        print(f"[sun-buddy] snoozed {int(minutes)} min", flush=True)
+
+    def _quit(self):
+        try:
+            self.root.destroy()
         except tk.TclError:
-            return
-        if value < 1.0:
-            p.after(16, lambda: self._fade_in(p, min(1.0, value + 0.08)))
-
-    def _make_draggable(self, popup, widget):
-        def start(e):
-            widget._dx, widget._dy = e.x, e.y
-
-        def move(e):
-            x = popup.winfo_x() + e.x - getattr(widget, "_dx", 0)
-            y = popup.winfo_y() + e.y - getattr(widget, "_dy", 0)
-            popup.geometry(f"+{x}+{y}")
-
-        widget.bind("<Button-1>", start)
-        widget.bind("<B1-Motion>", move)
+            pass
 
     # -- run -----------------------------------------------------------------
     def run(self):
-        print(
-            "[sun-buddy] running. Leave this open; I'll pop up on schedule.\n"
-            "[sun-buddy] press Ctrl+C here to stop.",
-            flush=True,
-        )
+        print("[sun-buddy] running ☀️  He'll bounce up on schedule.\n"
+              "[sun-buddy] click him for options, or Ctrl+C here to stop.",
+              flush=True)
         try:
             self.root.mainloop()
         except KeyboardInterrupt:
@@ -222,19 +352,25 @@ class Buddy:
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="A sunny mascot that reminds you to make your meetings on time.")
+    ap = argparse.ArgumentParser(
+        description="A cut-out sun mascot that bounces up to keep you punctual.")
     ap.add_argument("--every", type=float, default=30, metavar="MIN",
-                    help="minutes between pop-ups (default: 30)")
+                    help="minutes between visits (default: 30)")
     ap.add_argument("--snooze", type=float, default=5, metavar="MIN",
-                    help="minutes the snooze button adds (default: 5)")
+                    help="minutes the main snooze adds (default: 5)")
+    ap.add_argument("--linger", type=float, default=60, metavar="SEC",
+                    help="seconds to stay before auto-hiding; 0 = until clicked (default: 60)")
+    ap.add_argument("--size", type=int, default=190, metavar="PX",
+                    help="mascot height in pixels (default: 190)")
     ap.add_argument("--now", action="store_true",
-                    help="show a pop-up immediately on launch too")
+                    help="also bounce up immediately on launch")
     args = ap.parse_args(argv)
 
     if not os.path.exists(MASCOT_PATH):
         sys.exit(f"[sun-buddy] missing mascot image at {MASCOT_PATH}")
 
-    Buddy(interval_min=args.every, snooze_min=args.snooze, show_now=args.now).run()
+    SunBuddy(every_min=args.every, snooze_min=args.snooze, linger_s=args.linger,
+             show_now=args.now, mascot_h=args.size).run()
 
 
 if __name__ == "__main__":
