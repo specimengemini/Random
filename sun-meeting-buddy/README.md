@@ -11,7 +11,7 @@ just the little guy himself, with a tiny speech bubble.
 - ✅ **On my way!** — dismiss until the next visit
 - 😴 **Snooze 5 min** / **Snooze 15 min**
 - ⏰ **Remind me…** — change how often he visits (10–60 min), live
-- ✖ **Quit Sun Buddy**
+- ✖ **Quit Sunny Bad Buddy Timer**
 
 He bounces in with a **soft ding** to grab your attention, does a gentle idle
 bob, and quietly retreats after a minute if you ignore him (configurable).
@@ -26,7 +26,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.3  (Ctrl+C fix)
+Sunny Bad Buddy Timer v2.4  (standalone .exe)
 ```
 The version also prints in the first line when you launch it. If you see an
 older version (or `--version` isn't recognized), pull the latest:
@@ -87,9 +87,6 @@ Desktop. To launch him automatically at login, press `Win+R`, type
 - **From a terminal:** if you launched with `python buddy.py`, press **Ctrl+C**.
 - **Double-click `Stop Sunny.bat`:** handy when you started him by double-click
   (no terminal to Ctrl+C in). It only stops Sunny, not other Python programs.
-
-`--now` makes him bounce up immediately so you can see it working. Leave the
-terminal open — that's what keeps him running. Press `Ctrl+C` there to stop.
 
 ## Options
 
