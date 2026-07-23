@@ -7,20 +7,33 @@ REM  no Python folder needed to run it.
 REM ============================================================
 cd /d "%~dp0"
 
-where python >nul 2>nul
-if not %errorlevel%==0 (
+REM Find a working Python: the py launcher, then python, then python3.
+set "PYCMD="
+call :find py
+call :find python
+call :find python3
+
+if not defined PYCMD (
     echo.
-    echo   Python was not found. Install it from
-    echo   https://www.python.org/downloads/  (check "Add python.exe to PATH")
-    echo   then run this again.
+    echo   Could not find Python on this window's PATH.
+    echo.
+    echo   Two fixes:
+    echo   1^) Open the terminal where "python --version" already works,
+    echo      then run this file from there:   "Build EXE.bat"
+    echo   2^) Or install Python from https://www.python.org/downloads/
+    echo      and CHECK "Add python.exe to PATH", then try again.
     echo.
     pause
     exit /b
 )
 
 echo.
+echo   Using: %PYCMD%
+%PYCMD% --version
+
+echo.
 echo   [1/2] Installing the build tool (PyInstaller)...
-python -m pip install --upgrade --user pyinstaller
+%PYCMD% -m pip install --upgrade --user pyinstaller
 if not %errorlevel%==0 (
     echo   Could not install PyInstaller. Check your internet connection.
     pause
@@ -29,7 +42,7 @@ if not %errorlevel%==0 (
 
 echo.
 echo   [2/2] Building SunnyBadBuddyTimer.exe (this takes a minute)...
-python -m PyInstaller --noconfirm --clean --onefile --windowed ^
+%PYCMD% -m PyInstaller --noconfirm --clean --onefile --windowed ^
     --name "SunnyBadBuddyTimer" ^
     --icon "assets\sunny.ico" ^
     --add-data "assets;assets" ^
@@ -52,3 +65,11 @@ if exist "dist\SunnyBadBuddyTimer.exe" (
 )
 echo.
 pause
+exit /b
+
+:find
+REM Sets PYCMD to %1 if that command exists and we haven't found one yet.
+if defined PYCMD exit /b
+where %1 >nul 2>nul
+if %errorlevel%==0 set "PYCMD=%1"
+exit /b
