@@ -1,0 +1,4 @@
+# Sun Meeting Buddy runs on the Python standard library alone (Tkinter).
+# Pillow is OPTIONAL -- if present it gives slightly smoother image scaling.
+# Install it only if you want that:
+Pillow>=9.0 ; extra == "nice-scaling"
