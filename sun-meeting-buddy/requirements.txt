@@ -1,4 +1,9 @@
-# Sun Meeting Buddy runs on the Python standard library alone (Tkinter).
-# Pillow is OPTIONAL -- if present it gives slightly smoother image scaling.
-# Install it only if you want that:
-Pillow>=9.0 ; extra == "nice-scaling"
+# Sunny Bad Buddy Timer runs on the Python standard library (Tkinter) alone.
+#
+# Pillow is recommended: it enables the spin & squish animation. Without it,
+# Sunny still flies in, roams, bounces, and plays sounds -- he just won't
+# spin or squish.
+#
+#   pip install pillow
+#
+Pillow>=9.0

@@ -28,7 +28,7 @@ import sys
 import tkinter as tk
 from datetime import datetime
 
-__version__ = "2.6  (perreo sola clip)"
+__version__ = "2.7  (spin, squish & float)"
 
 # When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
 # otherwise they sit next to this script.
@@ -89,6 +89,11 @@ class SunBuddy:
         self.vx = self.vy = 0.0
         self.bounds = (0, 0, 0, 0)   # left, top, right, bottom of the play area
         self.state = "rest"          # "roam" | "rest"
+        self.angle = 0.0             # current spin (degrees)
+        self.omega = 0.0             # spin speed (deg/s)
+        self.squish = None           # active impact squash, or None
+        self.spin_ok = False
+        self._live_photo = None      # keep a ref so live-rendered frames survive
 
         self._build_window()
 
@@ -155,6 +160,15 @@ class SunBuddy:
         except Exception:
             pass
 
+    def _stop_one(self, alias):
+        """Stop a single Windows MCI clip (used to cap the timer song ~3s)."""
+        try:
+            if sys.platform.startswith("win"):
+                import ctypes
+                ctypes.windll.winmm.mciSendStringW(f"close {alias}", None, 0, None)
+        except Exception:
+            pass
+
     def _work_area(self):
         """(left, top, right, bottom) of usable screen, excluding the taskbar."""
         sw = self.root.winfo_screenwidth()
@@ -174,31 +188,58 @@ class SunBuddy:
         return 0, 0, sw, sh - 4
 
     # -- image ---------------------------------------------------------------
-    def _load_photo(self):
+    N_FRAMES = 24  # pre-rendered rotation frames for the spin
+
+    def _setup_images(self):
+        """With Pillow: build rotation frames (spin + squish enabled).
+        Without Pillow: one static image (roams but doesn't spin)."""
         target_h = self.mascot_h
+        self.spin_ok = False
+        self.frames = []
         try:
             from PIL import Image, ImageFilter, ImageTk
-            img = Image.open(MASCOT_PATH).convert("RGBA")
-            w = round(img.width * target_h / img.height)
-            img = img.resize((w, target_h), Image.LANCZOS)
-            a = img.split()[3].point(lambda p: 255 if p >= 128 else 0)
-            a = a.filter(ImageFilter.MinFilter(3))  # erode 1px -> no halo
-            img.putalpha(a)
-            if self.transparent_ok:
-                # bake transparent areas to the color-key so Windows hides them
-                base = Image.new("RGBA", img.size, KEY_RGB + (255,))
-                base.alpha_composite(img)
-                self.photo = ImageTk.PhotoImage(base.convert("RGB"))
-            else:
-                # keep alpha so it blends onto the fallback card
-                self.photo = ImageTk.PhotoImage(img)
+            self._Image, self._ImageTk = Image, ImageTk
+            base = Image.open(MASCOT_PATH).convert("RGBA")
+            w = max(1, round(base.width * target_h / base.height))
+            base = base.resize((w, target_h), Image.LANCZOS)
+            a = base.split()[3].point(lambda p: 255 if p >= 128 else 0)
+            base.putalpha(a.filter(ImageFilter.MinFilter(3)))
+            self._pil_base = base
+            # square big enough to hold the mascot at any rotation
+            self.frame_sz = int(math.ceil(math.hypot(base.width, base.height)))
+            self.mascot_w = self.mascot_h_px = self.frame_sz
+            self.frames = [self._make_photo(i * 360.0 / self.N_FRAMES)
+                           for i in range(self.N_FRAMES)]
+            self.photo = self.frames[0]
+            self.spin_ok = True
         except Exception:
             img = tk.PhotoImage(file=MASCOT_PATH)
             factor = max(1, round(img.height() / target_h))
             if factor > 1:
                 img = img.subsample(factor, factor)
             self.photo = img
-        return self.photo.width(), self.photo.height()
+            self.mascot_w, self.mascot_h_px = img.width(), img.height()
+
+    def _make_photo(self, angle, sx=1.0, sy=1.0):
+        """Render the mascot rotated by `angle` and squished by (sx, sy),
+        centered on a fixed frame_sz square, ready for the canvas."""
+        Image = self._Image
+        img = self._pil_base
+        if sx != 1.0 or sy != 1.0:
+            img = img.resize((max(1, round(img.width * sx)),
+                              max(1, round(img.height * sy))), Image.LANCZOS)
+        if angle:
+            img = img.rotate(angle, resample=Image.BICUBIC, expand=True)
+        a = img.split()[3].point(lambda p: 255 if p >= 110 else 0)
+        img.putalpha(a)
+        sz = self.frame_sz
+        frame = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        frame.alpha_composite(img, ((sz - img.width) // 2, (sz - img.height) // 2))
+        if self.transparent_ok:
+            base = Image.new("RGBA", (sz, sz), KEY_RGB + (255,))
+            base.alpha_composite(frame)
+            return self._ImageTk.PhotoImage(base.convert("RGB"))
+        return self._ImageTk.PhotoImage(frame)
 
     # -- window construction -------------------------------------------------
     def _build_window(self):
@@ -220,13 +261,14 @@ class SunBuddy:
             canvas_bg = "#FFF6D8"
             w.configure(bg=BUBBLE_EDGE)
 
-        mw, mh = self._load_photo()
+        self._setup_images()
+        mw, mh = self.mascot_w, self.mascot_h_px
         bubble_h = 52
         gap = 8
         pad = 6 if self.transparent_ok else 3
-        self.win_w = mw + pad * 2
+        bubble_w = min(max(mw, 220), 300)
+        self.win_w = max(mw, bubble_w) + pad * 2
         self.win_h = bubble_h + gap + mh + pad * 2
-        self.mascot_bottom_pad = pad
 
         c = tk.Canvas(w, width=self.win_w, height=self.win_h,
                       bg=canvas_bg, highlightthickness=0, bd=0)
@@ -235,18 +277,17 @@ class SunBuddy:
 
         cx = self.win_w // 2
         # speech bubble
-        self._draw_bubble(c, cx, pad, self.win_w - pad * 2, bubble_h)
+        self._draw_bubble(c, cx, pad, bubble_w, bubble_h)
         self.bubble_text = c.create_text(
-            cx, pad + bubble_h // 2 - 2, text="", width=self.win_w - pad * 4,
+            cx, pad + bubble_h // 2 - 2, text="", width=bubble_w - 20,
             font=("Helvetica", 10, "bold"), fill=BUBBLE_INK, justify="center")
         # mascot
         self.mascot_img = c.create_image(
             cx, pad + bubble_h + gap + mh // 2, image=self.photo)
 
         c.configure(cursor="hand2")
-        c.bind("<Button-1>", self._on_click)           # left: sound + little pop
-        c.bind("<Double-Button-1>", self._open_menu)   # double: options menu
-        c.bind("<Button-3>", self._smack)              # right: beach-ball smack
+        c.bind("<Button-1>", self._open_menu)   # left-click: options menu
+        c.bind("<Button-3>", self._smack)       # right-click: beach-ball smack
         w.bind("<Escape>", lambda _e: self._dismiss())
 
         self._build_menu()
@@ -319,33 +360,52 @@ class SunBuddy:
         self.canvas.itemconfigure(self.bubble_text, text=random.choice(HYPE_LINES))
         left, top, right, bottom = self._work_area()
         self.bounds = (left, top, right, bottom)
-        # start near the bottom-right corner, then fling across the screen
-        self.px = float(right - self.win_w - 40)
+        # start near the bottom-right corner, then float across the screen
+        self.px = float(right - self.win_w - 20)
         self.py = float(bottom - self.win_h)
         self.win.geometry(f"{self.win_w}x{self.win_h}+{int(self.px)}+{int(self.py)}")
         self.win.deiconify()
         self.win.lift()
         self.win.attributes("-topmost", True)
         self._play_sound(TIMER_SOUND, "sunnytimer")
+        self.root.after(3200, lambda: self._stop_one("sunnytimer"))  # ~3s cap
 
-        # launch up-and-to-the-left so he bounces around the whole screen
-        self._launch(-440.0, -940.0)
+        # drift up-and-to-the-left with a light spin
+        self._launch(-300.0, -560.0, random.uniform(-140, 140))
 
-        # auto-hide after lingering (unless disabled)
         if self._linger_job is not None:
             self.root.after_cancel(self._linger_job)
         if self.linger_ms > 0:
             self._linger_job = self.root.after(self.linger_ms, self._retreat_if_idle)
 
-    # -- bounce physics ------------------------------------------------------
-    G = 1500.0          # gravity (px/s^2)
-    WALL_DAMP = 0.86    # energy kept when bouncing off a side wall / ceiling
-    FLOOR_DAMP = 0.74   # energy kept when bouncing off the floor
-    AIR_DRAG = 0.995    # gentle horizontal drag while airborne
+    # -- bounce physics (light & floaty, like a beach ball) ------------------
+    G = 650.0           # gravity (px/s^2) -- low, so he hangs in the air
+    WALL_DAMP = 0.92    # energy kept bouncing off a side wall / ceiling
+    FLOOR_DAMP = 0.90   # energy kept bouncing off the floor
+    AIR_DRAG = 0.999    # almost no horizontal drag
+    SPIN_DECAY = 0.992  # spin bleeds off slowly
+    MAX_SPEED = 1600.0
+    MAX_SPIN = 760.0
 
-    def _launch(self, vx, vy):
-        """Give Sunny a velocity and (re)start the roam animation."""
+    def _launch(self, vx, vy, omega=None):
+        """Give Sunny a velocity (and optional spin) and start roaming."""
         self.vx, self.vy = vx, vy
+        if omega is not None:
+            self.omega = omega
+        self.state = "roam"
+        if self._anim_job is None:
+            self._animate()
+
+    def _add_impulse(self, dvx, dvy, domega):
+        """Accumulate momentum + spin (each smack builds on the last)."""
+        self.vx += dvx
+        self.vy += dvy
+        self.omega += domega
+        sp = math.hypot(self.vx, self.vy)
+        if sp > self.MAX_SPEED:
+            f = self.MAX_SPEED / sp
+            self.vx *= f; self.vy *= f
+        self.omega = max(-self.MAX_SPIN, min(self.MAX_SPIN, self.omega))
         self.state = "roam"
         if self._anim_job is None:
             self._animate()
@@ -362,31 +422,70 @@ class SunBuddy:
             self.px += self.vx * dt
             self.py += self.vy * dt
 
+            hit, speed = None, 0.0
             if self.px <= left:
-                self.px = float(left); self.vx = abs(self.vx) * self.WALL_DAMP
+                self.px = float(left); speed = abs(self.vx)
+                self.vx = abs(self.vx) * self.WALL_DAMP; hit = "x"
             elif self.px >= max_x:
-                self.px = float(max_x); self.vx = -abs(self.vx) * self.WALL_DAMP
+                self.px = float(max_x); speed = abs(self.vx)
+                self.vx = -abs(self.vx) * self.WALL_DAMP; hit = "x"
             if self.py <= top:
-                self.py = float(top); self.vy = abs(self.vy) * self.WALL_DAMP
+                self.py = float(top); speed = max(speed, abs(self.vy))
+                self.vy = abs(self.vy) * self.WALL_DAMP; hit = "y"
 
-            if self.py >= max_y:                       # hit the floor
-                self.py = float(max_y)
+            if self.py >= max_y:                       # floor
+                self.py = float(max_y); speed = max(speed, abs(self.vy))
                 self.vy = -abs(self.vy) * self.FLOOR_DAMP
-                self.vx *= 0.9                         # rolling friction
-                if abs(self.vy) < 70 and abs(self.vx) < 25:
-                    self.vx = self.vy = 0.0            # settle down and rest
-                    self.state = "rest"
+                self.vx *= 0.985; hit = "y"
+                if abs(self.vy) < 45 and abs(self.vx) < 18:
+                    self.vx = self.vy = 0.0
+                    self.omega *= 0.5
+                    if abs(self.omega) < 6:
+                        self.state = "rest"
+
+            # spin
+            self.angle = (self.angle + self.omega * dt) % 360.0
+            self.omega *= self.SPIN_DECAY
+
+            # squish on a solid hit (if not already squishing)
+            if hit and self.spin_ok and self.squish is None and speed > 130:
+                mag = min(0.42, 0.16 + speed / 2800.0)
+                self.squish = {"axis": hit, "t": 0.0, "dur": 0.17, "mag": mag}
 
             try:
                 self.win.geometry(f"+{int(self.px)}+{int(self.py)}")
             except tk.TclError:
                 self._anim_job = None
                 return
+            self._render_frame(dt)
 
         if self.state == "rest":
+            self._render_frame(0.0)
             self._anim_job = None                      # stop looping, save CPU
             return
         self._anim_job = self.root.after(16, self._animate)
+
+    def _render_frame(self, dt):
+        """Swap the canvas image to match the current spin/squish."""
+        if not self.spin_ok:
+            return
+        sq = self.squish
+        if sq is not None:
+            sq["t"] += dt
+            p = sq["t"] / sq["dur"]
+            if p >= 1.0:
+                self.squish = None
+            else:
+                amt = sq["mag"] * (1.0 - p)
+                if sq["axis"] == "x":
+                    sx, sy = 1.0 - amt, 1.0 + amt * 0.6
+                else:
+                    sx, sy = 1.0 + amt * 0.6, 1.0 - amt
+                self._live_photo = self._make_photo(self.angle, sx, sy)
+                self.canvas.itemconfigure(self.mascot_img, image=self._live_photo)
+                return
+        idx = int(round(self.angle / (360.0 / self.N_FRAMES))) % self.N_FRAMES
+        self.canvas.itemconfigure(self.mascot_img, image=self.frames[idx])
 
     def _stop_anim(self):
         if self._anim_job is not None:
@@ -417,19 +516,18 @@ class SunBuddy:
         if self.linger_ms > 0 and self.win.state() != "withdrawn":
             self._linger_job = self.root.after(self.linger_ms, self._retreat_if_idle)
 
-    def _on_click(self, event):
-        # left-click: play the clip and give him a little upward pop
-        self._play_sound(CLICK_SOUND, "sunnyclick")
-        self._bump_linger()
-        self._launch(self.vx * 0.5 + random.uniform(-140, 140), -460.0)
-
     def _smack(self, event):
-        # right-click: whack the beach ball with a strong random impulse,
-        # pushed away from whichever side you hit
+        # right-click: whack the beach ball. Each hit ADDS momentum + a random
+        # spin, pushed away from whichever side you struck, so rapid clicks
+        # build up speed and spin.
         self._play_sound(CLICK_SOUND, "sunnyclick")
         self._bump_linger()
         away = -1.0 if event.x > self.win_w / 2 else 1.0
-        self._launch(away * random.uniform(420, 760), -random.uniform(680, 1020))
+        self._add_impulse(
+            away * random.uniform(300, 560),
+            -random.uniform(360, 640),
+            random.choice((-1.0, 1.0)) * random.uniform(220, 520),
+        )
 
     def _open_menu(self, event):
         # extend linger while the user is interacting

@@ -7,19 +7,19 @@ bubble.
 
 ![the buddy in action](assets/preview.png)
 
-When the timer's up he flies in playing a **hype sound** and bounces around
-the screen under gravity, ping-ponging off the edges until he settles.
+When the timer's up he flies in playing a **~3-second hype clip** and floats
+around the screen like a light beach ball — spinning, ping-ponging off the
+edges, and **squishing** when he hits a wall — until he settles.
 
 ### How to play with him
 
 | Do this | He does this |
 |---------|--------------|
-| **Left-click** him | Plays his sound + a little pop |
-| **Right-click** him | Smacks him like a beach ball — bounces off in a new direction |
-| **Double-click** him | Opens his options menu (below) |
+| **Left-click** him | Opens his options menu (below) |
+| **Right-click** him | Smacks him like a beach ball — he bounces off with a spin. **Each hit adds more momentum**, so keep whacking to send him flying. Plays his click sound. |
 | **Esc** | Sends him away until the next visit |
 
-**Options menu** (double-click):
+**Options menu** (left-click):
 
 - ✅ **On my way!** — dismiss until the next visit
 - 😴 **Snooze 5 min** / **Snooze 15 min**
@@ -34,8 +34,8 @@ He quietly retreats after a minute if you ignore him (configurable with
 
 Two clips live in `assets/` — swap in any `.mp3` to change them:
 
-- `assets/timer.mp3` — plays when the timer is up and he flies in
-- `assets/click.mp3` — plays when you click or smack him
+- `assets/timer.mp3` — plays when the timer is up and he flies in (~3s)
+- `assets/click.mp3` — plays when you smack him (right-click)
 
 Dismissing him (menu, `Esc`, or auto-hide) also stops the current clip, so a
 long timer song won't keep playing after he's gone.
@@ -48,7 +48,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.6  (perreo sola clip)
+Sunny Bad Buddy Timer v2.7  (spin, squish & float)
 ```
 The version also prints in the first line when you launch it. If you see an
 older version (or `--version` isn't recognized), pull the latest:
@@ -60,7 +60,8 @@ or re-download the branch ZIP from GitHub and replace your folder.
 ## Run it
 
 Needs Python 3 (Tkinter is included with the standard Windows/macOS installers).
-No other libraries required.
+For the spin & squish, also install Pillow: `pip install pillow` (optional —
+see Notes).
 
 **Windows**
 ```bat
@@ -105,7 +106,7 @@ Desktop. To launch him automatically at login, press `Win+R`, type
 
 ### Stopping him
 
-- **From his menu:** double-click him → **Quit Sunny Bad Buddy Timer**. (Always works.)
+- **From his menu:** left-click him → **Quit Sunny Bad Buddy Timer**. (Always works.)
 - **From a terminal:** if you launched with `python buddy.py`, press **Ctrl+C**.
 - **Double-click `Stop Sunny.bat`:** handy when you started him by double-click
   (no terminal to Ctrl+C in). It only stops Sunny, not other Python programs.
@@ -146,8 +147,9 @@ falls back to a small soft card so the app still works everywhere.
 
 ## Notes
 
-- **Zero dependencies.** Pure standard-library Tkinter. If you happen to have
-  [Pillow](https://python-pillow.org/) installed, the cut-out edges are a touch
-  cleaner — but it's entirely optional.
+- **Runs on standard-library Tkinter.** For the **spin & squish**, install
+  [Pillow](https://python-pillow.org/) (`pip install pillow`). Without it he
+  still flies in, roams, bounces, and plays sounds — he just won't spin or
+  squish. The bundled `.exe` includes Pillow automatically.
 - The mascot art lives in `assets/mascot.png` — swap in any transparent PNG to
   change your buddy.

@@ -32,10 +32,10 @@ echo   Using: %PYCMD%
 %PYCMD% --version
 
 echo.
-echo   [1/2] Installing the build tool (PyInstaller)...
-%PYCMD% -m pip install --upgrade --user pyinstaller
+echo   [1/2] Installing the build tools (PyInstaller + Pillow for spin)...
+%PYCMD% -m pip install --upgrade --user pyinstaller pillow
 if not %errorlevel%==0 (
-    echo   Could not install PyInstaller. Check your internet connection.
+    echo   Could not install the build tools. Check your internet connection.
     pause
     exit /b
 )
