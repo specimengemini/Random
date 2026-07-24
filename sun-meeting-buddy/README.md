@@ -17,7 +17,7 @@ grows and fades with his height — until he settles.
 | Do this | He does this |
 |---------|--------------|
 | **Left-click** him | Opens his options menu (below) |
-| **Right-click** him | Smacks him like a beach ball — he bounces off with a spin. **Each hit adds more momentum**, so keep whacking to send him flying. Plays his click sound. |
+| **Right-click** him | Smacks him like a beach ball — he bounces off with a spin. **Each hit adds more momentum**, so keep whacking to send him flying. Plays the short clip, then the long one. |
 | **Esc** | Sends him away until the next visit |
 
 **Options menu** (left-click):
@@ -35,8 +35,11 @@ He quietly retreats after a minute if you ignore him (configurable with
 
 Two clips live in `assets/` — swap in any `.mp3` to change them:
 
-- `assets/timer.mp3` — plays when the timer is up and he flies in (~3s)
-- `assets/click.mp3` — plays when you smack him (right-click)
+- `assets/timer.mp3` — the long hype clip (~5s); plays when the timer is up
+- `assets/click.mp3` — the short clip; plays the instant you smack him
+
+**Smacking him (right-click)** plays the short clip immediately, then rolls
+into the long clip right after — short then long.
 
 Dismissing him (menu, `Esc`, or auto-hide) also stops the current clip, so a
 long timer song won't keep playing after he's gone.
@@ -49,7 +52,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.8  (ground shadow)
+Sunny Bad Buddy Timer v2.9  (longer sola + click combo)
 ```
 It's also shown at the **bottom of his left-click menu** (handy when you
 launched him by double-click and have no terminal), and on the first line when

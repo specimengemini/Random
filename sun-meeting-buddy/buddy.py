@@ -28,7 +28,7 @@ import sys
 import tkinter as tk
 from datetime import datetime
 
-__version__ = "2.8  (ground shadow)"
+__version__ = "2.9  (longer sola + click combo)"
 
 # When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
 # otherwise they sit next to this script.
@@ -85,6 +85,7 @@ class SunBuddy:
         self._linger_job = None
         self._menu_open = False
         self._snd_proc = None      # last audio subprocess (macOS/Linux)
+        self._seq_job = None       # pending "long clip after short clip" timer
 
         # 2-D bounce physics: window top-left position + velocity (px, px/s)
         self.px = self.py = 0.0
@@ -434,7 +435,7 @@ class SunBuddy:
         self.win.lift()
         self.win.attributes("-topmost", True)
         self._play_sound(TIMER_SOUND, "sunnytimer")
-        self.root.after(3200, lambda: self._stop_one("sunnytimer"))  # ~3s cap
+        self.root.after(5200, lambda: self._stop_one("sunnytimer"))  # ~5s cap
 
         # drift up-and-to-the-left with a light spin
         self._launch(-300.0, -560.0, random.uniform(-140, 140))
@@ -566,6 +567,9 @@ class SunBuddy:
 
     def _dismiss(self):
         self._stop_anim()
+        if self._seq_job is not None:
+            self.root.after_cancel(self._seq_job)
+            self._seq_job = None
         self._stop_sounds()
         if self._linger_job is not None:
             self.root.after_cancel(self._linger_job)
@@ -586,11 +590,21 @@ class SunBuddy:
         if self.linger_ms > 0 and self.win.state() != "withdrawn":
             self._linger_job = self.root.after(self.linger_ms, self._retreat_if_idle)
 
+    CLICK_LEN_MS = 1100   # ~length of the short click clip, before the long one
+
+    def _play_click_then_long(self):
+        """Short clip immediately, then the long clip right after it."""
+        self._play_sound(CLICK_SOUND, "sunnyclick")
+        if self._seq_job is not None:
+            self.root.after_cancel(self._seq_job)
+        self._seq_job = self.root.after(
+            self.CLICK_LEN_MS, lambda: self._play_sound(TIMER_SOUND, "sunnytimer"))
+
     def _smack(self, event):
         # right-click: whack the beach ball. Each hit ADDS momentum + a random
         # spin, pushed away from whichever side you struck, so rapid clicks
         # build up speed and spin.
-        self._play_sound(CLICK_SOUND, "sunnyclick")
+        self._play_click_then_long()
         self._bump_linger()
         away = -1.0 if event.x > self.win_w / 2 else 1.0
         self._add_impulse(
