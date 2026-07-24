@@ -1,22 +1,41 @@
 # ☀️ Sunny Bad Buddy Timer
 
-A cut-out sun mascot who **bounces up from the bottom of your screen** every
+A cut-out sun mascot who **bounces and roams all around your screen** every
 30 minutes to remind you to make your meetings on time. No window, no card —
-just the little guy himself, with a tiny speech bubble.
+just the little guy himself, ricocheting off the walls with a tiny speech
+bubble.
 
 ![the buddy in action](assets/preview.png)
 
-**Click him** to open his menu:
+When the timer's up he flies in playing a **hype sound** and bounces around
+the screen under gravity, ping-ponging off the edges until he settles.
+
+### How to play with him
+
+| Do this | He does this |
+|---------|--------------|
+| **Left-click** him | Plays his sound + a little pop |
+| **Right-click** him | Smacks him like a beach ball — bounces off in a new direction |
+| **Double-click** him | Opens his options menu (below) |
+| **Esc** | Sends him away until the next visit |
+
+**Options menu** (double-click):
 
 - ✅ **On my way!** — dismiss until the next visit
 - 😴 **Snooze 5 min** / **Snooze 15 min**
 - ⏰ **Remind me…** — change how often he visits (10–60 min), live
+- 🔊 **Sounds** — toggle his audio on/off
 - ✖ **Quit Sunny Bad Buddy Timer**
 
-He bounces in with a **soft ding** to grab your attention, does a gentle idle
-bob, and quietly retreats after a minute if you ignore him (configurable).
-Press `Esc` to dismiss him too. The menu also has a **🔔 Ding on arrival**
-toggle if you want him silent.
+He quietly retreats after a minute if you ignore him (configurable with
+`--linger`; set `--linger 0` to keep him bouncing until you dismiss him).
+
+### His sounds
+
+Two clips live in `assets/` — swap in any `.mp3` to change them:
+
+- `assets/timer.mp3` — plays when the timer is up and he flies in
+- `assets/click.mp3` — plays when you click or smack him
 
 ## Checking your version
 
@@ -26,7 +45,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.4  (standalone .exe)
+Sunny Bad Buddy Timer v2.5  (roaming bounce + sounds)
 ```
 The version also prints in the first line when you launch it. If you see an
 older version (or `--version` isn't recognized), pull the latest:
@@ -83,7 +102,7 @@ Desktop. To launch him automatically at login, press `Win+R`, type
 
 ### Stopping him
 
-- **From his menu:** click him → **Quit Sunny Bad Buddy Timer**. (Always works.)
+- **From his menu:** double-click him → **Quit Sunny Bad Buddy Timer**. (Always works.)
 - **From a terminal:** if you launched with `python buddy.py`, press **Ctrl+C**.
 - **Double-click `Stop Sunny.bat`:** handy when you started him by double-click
   (no terminal to Ctrl+C in). It only stops Sunny, not other Python programs.
@@ -96,7 +115,7 @@ Desktop. To launch him automatically at login, press `Win+R`, type
 | `--snooze MIN` | Minutes the main snooze adds | `5` |
 | `--linger SEC` | Seconds before he auto-hides; `0` = stay until clicked | `60` |
 | `--size PX` | Mascot height in pixels | `380` |
-| `--mute` | Start with the ding silenced | off |
+| `--mute` | Start with his sounds silenced | off |
 | `--now` | Also bounce up immediately on launch | off |
 | `--version` | Print the version and exit | — |
 
