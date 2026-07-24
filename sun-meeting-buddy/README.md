@@ -37,6 +37,9 @@ Two clips live in `assets/` — swap in any `.mp3` to change them:
 - `assets/timer.mp3` — plays when the timer is up and he flies in
 - `assets/click.mp3` — plays when you click or smack him
 
+Dismissing him (menu, `Esc`, or auto-hide) also stops the current clip, so a
+long timer song won't keep playing after he's gone.
+
 ## Checking your version
 
 To be sure your copy is up to date, run:
@@ -45,7 +48,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.5  (roaming bounce + sounds)
+Sunny Bad Buddy Timer v2.6  (perreo sola clip)
 ```
 The version also prints in the first line when you launch it. If you see an
 older version (or `--version` isn't recognized), pull the latest:

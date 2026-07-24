@@ -28,7 +28,7 @@ import sys
 import tkinter as tk
 from datetime import datetime
 
-__version__ = "2.5  (roaming bounce + sounds)"
+__version__ = "2.6  (perreo sola clip)"
 
 # When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
 # otherwise they sit next to this script.
@@ -82,6 +82,7 @@ class SunBuddy:
         self._anim_job = None
         self._linger_job = None
         self._menu_open = False
+        self._snd_proc = None      # last audio subprocess (macOS/Linux)
 
         # 2-D bounce physics: window top-left position + velocity (px, px/s)
         self.px = self.py = 0.0
@@ -134,8 +135,23 @@ class SunBuddy:
                         cmd = [exe, "--play-and-exit", "--intf", "dummy", path]
                     else:
                         cmd = [exe, path]
-                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    self._snd_proc = subprocess.Popen(
+                        cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     break
+        except Exception:
+            pass
+
+    def _stop_sounds(self):
+        """Cut off any playing clip (e.g. the long timer song on dismiss)."""
+        try:
+            if sys.platform.startswith("win"):
+                import ctypes
+                mci = ctypes.windll.winmm.mciSendStringW
+                mci("close sunnytimer", None, 0, None)
+                mci("close sunnyclick", None, 0, None)
+            elif self._snd_proc is not None:
+                self._snd_proc.terminate()
+                self._snd_proc = None
         except Exception:
             pass
 
@@ -383,6 +399,7 @@ class SunBuddy:
 
     def _dismiss(self):
         self._stop_anim()
+        self._stop_sounds()
         if self._linger_job is not None:
             self.root.after_cancel(self._linger_job)
             self._linger_job = None
@@ -435,6 +452,7 @@ class SunBuddy:
         print(f"[sunny] snoozed {int(minutes)} min", flush=True)
 
     def _quit(self):
+        self._stop_sounds()
         try:
             self.root.destroy()
         except tk.TclError:
