@@ -9,7 +9,8 @@ bubble.
 
 When the timer's up he flies in playing a **~3-second hype clip** and floats
 around the screen like a light beach ball — spinning, ping-ponging off the
-edges, and **squishing** when he hits a wall — until he settles.
+edges, **squishing** when he hits a wall, and casting a **ground shadow** that
+grows and fades with his height — until he settles.
 
 ### How to play with him
 
@@ -48,14 +49,27 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.7  (spin, squish & float)
+Sunny Bad Buddy Timer v2.8  (ground shadow)
 ```
-The version also prints in the first line when you launch it. If you see an
-older version (or `--version` isn't recognized), pull the latest:
+It's also shown at the **bottom of his left-click menu** (handy when you
+launched him by double-click and have no terminal), and on the first line when
+you launch from a terminal. If you see an older version (or `--version` isn't
+recognized), pull the latest:
 ```bash
 git pull origin claude/meeting-reminder-app-6mhbkx
 ```
 or re-download the branch ZIP from GitHub and replace your folder.
+
+### Updating your desktop app to a new version
+
+- **If your Desktop shortcut / `.bat` launcher runs `buddy.py`** (the shortcut
+  made by `Create Desktop Shortcut.bat`): just `git pull` (and `pip install
+  pillow` if you haven't). The shortcut runs the updated code automatically —
+  nothing else to do. Confirm via the version line in his menu.
+- **If you run the built `.exe`:** re-run **`Build EXE.bat`** to regenerate
+  `dist\SunnyBadBuddyTimer.exe`, then replace the copy you moved or pinned
+  (delete the old one first, or overwrite it). The old `.exe` keeps the old
+  version until you rebuild.
 
 ## Run it
 
@@ -120,6 +134,7 @@ Desktop. To launch him automatically at login, press `Win+R`, type
 | `--linger SEC` | Seconds before he auto-hides; `0` = stay until clicked | `60` |
 | `--size PX` | Mascot height in pixels | `380` |
 | `--mute` | Start with his sounds silenced | off |
+| `--no-shadow` | Turn off the ground shadow | off |
 | `--now` | Also bounce up immediately on launch | off |
 | `--version` | Print the version and exit | — |
 

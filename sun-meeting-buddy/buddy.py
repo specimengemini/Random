@@ -28,7 +28,7 @@ import sys
 import tkinter as tk
 from datetime import datetime
 
-__version__ = "2.7  (spin, squish & float)"
+__version__ = "2.8  (ground shadow)"
 
 # When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
 # otherwise they sit next to this script.
@@ -59,13 +59,15 @@ HYPE_LINES = [
 
 
 class SunBuddy:
-    def __init__(self, every_min, snooze_min, linger_s, show_now, mascot_h, muted=False):
+    def __init__(self, every_min, snooze_min, linger_s, show_now, mascot_h,
+                 muted=False, want_shadow=True):
         self.interval_ms = int(every_min * 60_000)
         self.every_min = every_min
         self.snooze_min = snooze_min
         self.linger_ms = int(linger_s * 1000)
         self.mascot_h = mascot_h
         self.muted = muted
+        self.want_shadow = want_shadow
 
         self.root = tk.Tk()
         self.root.withdraw()
@@ -94,6 +96,12 @@ class SunBuddy:
         self.squish = None           # active impact squash, or None
         self.spin_ok = False
         self._live_photo = None      # keep a ref so live-rendered frames survive
+
+        # ground shadow overlay (Windows/transparent only)
+        self.shadow = None
+        self.shadow_canvas = None
+        self.shadow_oval = None
+        self.shadow_alpha_ok = False
 
         self._build_window()
 
@@ -291,6 +299,59 @@ class SunBuddy:
         w.bind("<Escape>", lambda _e: self._dismiss())
 
         self._build_menu()
+        if self.transparent_ok and self.want_shadow:
+            self._build_shadow()
+
+    def _build_shadow(self):
+        """A soft ground shadow that tracks Sunny and scales with his height.
+        Only meaningful where color-key transparency works (Windows)."""
+        try:
+            s = tk.Toplevel(self.root)
+            s.withdraw()
+            s.overrideredirect(True)
+            s.attributes("-topmost", True)
+            s.attributes("-transparentcolor", KEY)
+            s.configure(bg=KEY)
+            self.shadow_max_w = max(40, int(self.mascot_w * 0.85))
+            self.shadow_h = 80
+            sc = tk.Canvas(s, width=self.shadow_max_w, height=self.shadow_h,
+                           bg=KEY, highlightthickness=0, bd=0)
+            sc.pack()
+            self.shadow_oval = sc.create_oval(0, 0, 10, 10, fill="#303030", outline="")
+            self.shadow, self.shadow_canvas = s, sc
+            try:
+                s.attributes("-alpha", 0.3)     # soften if the platform allows
+                self.shadow_alpha_ok = True
+            except tk.TclError:
+                self.shadow_alpha_ok = False
+            # Put Sunny above the shadow in the z-order, once.
+            self.win.lift()
+        except Exception:
+            self.shadow = None
+
+    def _update_shadow(self):
+        if self.shadow is None:
+            return
+        try:
+            left, top, right, bottom = self.bounds
+            max_y = bottom - self.win_h
+            center_x = self.px + self.win_w / 2.0
+            height_above = max(0.0, max_y - self.py)
+            hmax = max(1.0, max_y - top)
+            r = min(1.0, height_above / hmax)          # 0 = on floor, 1 = way up
+
+            scale = 1.0 - 0.55 * r
+            w = max(24, int(self.shadow_max_w * scale))
+            h = max(9, int(w * 0.26))
+            cw, ch = self.shadow_max_w, self.shadow_h
+            x0 = (cw - w) // 2
+            y1 = ch - 4
+            self.shadow_canvas.coords(self.shadow_oval, x0, y1 - h, x0 + w, y1)
+            if self.shadow_alpha_ok:
+                self.shadow.attributes("-alpha", max(0.08, 0.36 - 0.26 * r))
+            self.shadow.geometry(f"{cw}x{ch}+{int(center_x - cw / 2)}+{int(bottom - ch)}")
+        except tk.TclError:
+            pass
 
     def _draw_bubble(self, c, cx, top, width, height):
         x0 = cx - width // 2
@@ -328,6 +389,8 @@ class SunBuddy:
                           variable=self._sound_var, command=self._toggle_sound)
         m.add_separator()
         m.add_command(label="✖  Quit Sunny Bad Buddy Timer", command=self._quit)
+        m.add_separator()
+        m.add_command(label=f"v{__version__}", state="disabled")
         self.menu = m
 
     def _toggle_sound(self):
@@ -364,6 +427,9 @@ class SunBuddy:
         self.px = float(right - self.win_w - 20)
         self.py = float(bottom - self.win_h)
         self.win.geometry(f"{self.win_w}x{self.win_h}+{int(self.px)}+{int(self.py)}")
+        if self.shadow is not None:
+            self.shadow.deiconify()
+            self._update_shadow()
         self.win.deiconify()
         self.win.lift()
         self.win.attributes("-topmost", True)
@@ -458,9 +524,11 @@ class SunBuddy:
                 self._anim_job = None
                 return
             self._render_frame(dt)
+            self._update_shadow()
 
         if self.state == "rest":
             self._render_frame(0.0)
+            self._update_shadow()
             self._anim_job = None                      # stop looping, save CPU
             return
         self._anim_job = self.root.after(16, self._animate)
@@ -504,6 +572,8 @@ class SunBuddy:
             self._linger_job = None
         try:
             self.win.withdraw()
+            if self.shadow is not None:
+                self.shadow.withdraw()
         except tk.TclError:
             pass
 
@@ -589,7 +659,9 @@ def main(argv=None):
         description="A cut-out sun mascot that bounces up to keep you punctual.")
     ap.add_argument("--version", action="version",
                     version=f"Sunny Bad Buddy Timer v{__version__}")
-    ap.add_argument("--mute", action="store_true", help="silence the soft ding")
+    ap.add_argument("--mute", action="store_true", help="silence his sounds")
+    ap.add_argument("--no-shadow", action="store_true",
+                    help="disable the ground shadow")
     ap.add_argument("--every", type=float, default=30, metavar="MIN",
                     help="minutes between visits (default: 30)")
     ap.add_argument("--snooze", type=float, default=5, metavar="MIN",
@@ -609,7 +681,8 @@ def main(argv=None):
     show_now = args.now or getattr(sys, "frozen", False)
 
     SunBuddy(every_min=args.every, snooze_min=args.snooze, linger_s=args.linger,
-             show_now=show_now, mascot_h=args.size, muted=args.mute).run()
+             show_now=show_now, mascot_h=args.size, muted=args.mute,
+             want_shadow=not args.no_shadow).run()
 
 
 if __name__ == "__main__":
