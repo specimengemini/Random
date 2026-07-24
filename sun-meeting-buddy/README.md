@@ -7,7 +7,7 @@ bubble.
 
 ![the buddy in action](assets/preview.png)
 
-When the timer's up he flies in playing a **~3-second hype clip** and floats
+When the timer's up he flies in playing a **~5-second hype clip** and floats
 around the screen like a light beach ball — spinning, ping-ponging off the
 edges, **squishing** when he hits a wall, and casting a **ground shadow** that
 grows and fades with his height — until he settles.
