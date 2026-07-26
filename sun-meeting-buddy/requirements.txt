@@ -1,9 +1,10 @@
-# Sunny Bad Buddy Timer runs on the Python standard library (Tkinter) alone.
+# Sunny Bad Buddy Timer runs on the Python standard library (Tkinter) alone,
+# but two optional packages unlock extras:
 #
-# Pillow is recommended: it enables the spin & squish animation. Without it,
-# Sunny still flies in, roams, bounces, and plays sounds -- he just won't
-# spin or squish.
+#   Pillow   -> the spin & squish animation (without it he still roams/bounces)
+#   pystray  -> the system-tray icon (without it the tray icon is skipped)
 #
-#   pip install pillow
+#   pip install pillow pystray
 #
 Pillow>=9.0
+pystray>=0.19

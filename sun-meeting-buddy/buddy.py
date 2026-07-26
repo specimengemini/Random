@@ -26,9 +26,10 @@ import shutil
 import subprocess
 import sys
 import tkinter as tk
-from datetime import datetime
+from tkinter import simpledialog, messagebox
+from datetime import datetime, timedelta
 
-__version__ = "2.12  (clock tethered to the orb)"
+__version__ = "2.13  (tray, alarms, sounds)"
 
 # When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
 # otherwise they sit next to this script.
@@ -37,8 +38,10 @@ if getattr(sys, "frozen", False):
 else:
     HERE = os.path.dirname(os.path.abspath(__file__))
 MASCOT_PATH = os.path.join(HERE, "assets", "mascot.png")
-CLICK_SOUND = os.path.join(HERE, "assets", "click.mp3")   # left-click / smack
-TIMER_SOUND = os.path.join(HERE, "assets", "timer.mp3")   # on arrival (timer up)
+ICON_PATH = os.path.join(HERE, "assets", "sunny.ico")
+CLICK_SOUND = os.path.join(HERE, "assets", "click.mp3")    # left-click bounce
+TIMER_SOUND = os.path.join(HERE, "assets", "timer.mp3")    # on arrival (timer up)
+BOUNCE_SOUND = os.path.join(HERE, "assets", "bounce.wav")  # wall/corner impacts
 
 KEY = "#FF00FF"          # magenta color-key -> becomes transparent + click-through
 KEY_RGB = (255, 0, 255)
@@ -68,6 +71,15 @@ class SunBuddy:
         self.mascot_h = mascot_h
         self.muted = muted
         self.want_shadow = want_shadow
+
+        # per-category sound switches (all obey the global `muted` too)
+        self.snd_timer = self.snd_click = self.snd_bounce = True
+        # scheduling
+        self.anchor_min = None       # if set, visits land on the clock (:00/:15…)
+        self.lead_mins = set()       # extra "N min before" alerts for alarms
+        self._event_jobs = []        # pending alarm / reminder timers
+        self._bounce_cool = 0        # frames until the bounce sound may fire again
+        self.tray = None             # system-tray icon, if available
 
         self.root = tk.Tk()
         self.root.withdraw()
@@ -122,9 +134,15 @@ class SunBuddy:
             except Exception:
                 pass
 
-    def _play_sound(self, path, alias):
+    def _snd_enabled(self, cat):
+        if self.muted:
+            return False
+        return {"timer": self.snd_timer, "click": self.snd_click,
+                "bounce": self.snd_bounce}.get(cat, True)
+
+    def _play_sound(self, path, alias, cat="timer"):
         """Play an mp3/wav clip, non-blocking, best-effort per platform."""
-        if self.muted or not os.path.exists(path):
+        if not self._snd_enabled(cat) or not os.path.exists(path):
             return
         try:
             if sys.platform.startswith("win"):
@@ -340,8 +358,8 @@ class SunBuddy:
         self._position_clock()   # place it on the orb
 
         c.configure(cursor="hand2")
-        c.bind("<Button-1>", self._open_menu)   # left-click: options menu
-        c.bind("<Button-3>", self._smack)       # right-click: beach-ball smack
+        c.bind("<Button-1>", self._smack)       # left-click: beach-ball bounce
+        c.bind("<Button-3>", self._open_menu)   # right-click: options menu
         w.bind("<Escape>", lambda _e: self._dismiss())
 
         self._build_menu()
@@ -386,12 +404,12 @@ class SunBuddy:
             s.attributes("-topmost", True)
             s.attributes("-transparentcolor", KEY)
             s.configure(bg=KEY)
-            self.shadow_max_w = max(40, int(self.mascot_w * 0.85))
-            self.shadow_h = 80
+            self.shadow_max_w = max(60, int(self.mascot_w * 0.95))
+            self.shadow_h = max(30, int(self.shadow_max_w * 0.34))
             sc = tk.Canvas(s, width=self.shadow_max_w, height=self.shadow_h,
                            bg=KEY, highlightthickness=0, bd=0)
             sc.pack()
-            self.shadow_oval = sc.create_oval(0, 0, 10, 10, fill="#303030", outline="")
+            self.shadow_oval = sc.create_oval(0, 0, 10, 10, fill="#232323", outline="")
             self.shadow, self.shadow_canvas = s, sc
             try:
                 s.attributes("-alpha", 0.3)     # soften if the platform allows
@@ -411,18 +429,20 @@ class SunBuddy:
             max_y = bottom - self.win_h
             center_x = self.px + self.win_w / 2.0
             height_above = max(0.0, max_y - self.py)
-            hmax = max(1.0, max_y - top)
-            r = min(1.0, height_above / hmax)          # 0 = on floor, 1 = way up
+            # Reference a fraction of the screen so normal bounces span the full
+            # range -- otherwise the size change is barely visible.
+            ref = max(1.0, (max_y - top) * 0.42)
+            r = min(1.0, height_above / ref)           # 0 = on floor, 1 = high
 
-            scale = 1.0 - 0.55 * r
-            w = max(24, int(self.shadow_max_w * scale))
-            h = max(9, int(w * 0.26))
+            scale = 1.0 - 0.70 * r                     # shrink a lot as he rises
+            w = max(20, int(self.shadow_max_w * scale))
+            h = max(8, int(self.shadow_h * scale))
             cw, ch = self.shadow_max_w, self.shadow_h
             x0 = (cw - w) // 2
-            y1 = ch - 4
+            y1 = ch - 2
             self.shadow_canvas.coords(self.shadow_oval, x0, y1 - h, x0 + w, y1)
             if self.shadow_alpha_ok:
-                self.shadow.attributes("-alpha", max(0.08, 0.36 - 0.26 * r))
+                self.shadow.attributes("-alpha", max(0.10, 0.45 - 0.30 * r))
             self.shadow.geometry(f"{cw}x{ch}+{int(center_x - cw / 2)}+{int(bottom - ch)}")
         except tk.TclError:
             pass
@@ -448,53 +468,171 @@ class SunBuddy:
         m = tk.Menu(self.root, tearoff=0)
         m.add_command(label="✅  On my way!", command=self._dismiss)
         m.add_separator()
+        m.add_command(label="⏰  Set an alarm…", command=self._set_alarm)
+        m.add_command(label="🔔  Set a reminder…", command=self._set_reminder)
+
+        # Remind me… -- recurring, anchored to the clock (top of the hour etc.)
+        self._remind_var = tk.StringVar(value=("a%d" % self.anchor_min)
+                                        if self.anchor_min else "r%d" % int(self.every_min))
+        rem = tk.Menu(m, tearoff=0)
+        for n, lbl in ((15, "every 15 min — on the clock (:00/:15/:30/:45)"),
+                       (20, "every 20 min — on the clock"),
+                       (30, "every 30 min — on the clock (:00/:30)"),
+                       (60, "every hour — on the hour (:00)")):
+            rem.add_radiobutton(label=lbl, variable=self._remind_var, value="a%d" % n,
+                                command=lambda n=n: self._set_anchor(n))
+        rem.add_separator()
+        for n in (15, 30, 45, 60):
+            rem.add_radiobutton(label=f"every {n} min — from now", variable=self._remind_var,
+                                value="r%d" % n, command=lambda n=n: self._set_interval(n))
+        m.add_cascade(label="🔁  Remind me…", menu=rem)
+
+        # Alert me before… -- lead-time pings ahead of each alarm
+        self._lead_vars = {}
+        lead = tk.Menu(m, tearoff=0)
+        for L in (1, 5, 10, 15):
+            v = tk.BooleanVar(value=L in self.lead_mins)
+            self._lead_vars[L] = v
+            lead.add_checkbutton(label=f"{L} min before", variable=v,
+                                 command=lambda L=L: self._toggle_lead(L))
+        m.add_cascade(label="⏱  Alert me … before an alarm", menu=lead)
+
+        m.add_separator()
         m.add_command(label=f"\U0001F634  Snooze {int(self.snooze_min)} min",
                       command=lambda: self._snooze(self.snooze_min))
-        m.add_command(label="\U0001F634  Snooze 15 min",
-                      command=lambda: self._snooze(15))
-        sub = tk.Menu(m, tearoff=0)
-        for n in (10, 15, 20, 30, 45, 60):
-            sub.add_radiobutton(
-                label=f"every {n} min", value=n,
-                command=lambda n=n: self._set_interval(n))
-        m.add_cascade(label="⏰  Remind me…", menu=sub)
-        self._sound_var = tk.BooleanVar(value=not self.muted)
-        m.add_checkbutton(label="\U0001F50A  Sounds",
-                          variable=self._sound_var, command=self._toggle_sound)
+        m.add_command(label="\U0001F634  Snooze 15 min", command=lambda: self._snooze(15))
+
+        # Sounds -- individual on/off switches
+        self._snd_vars = {
+            "timer": tk.BooleanVar(value=self.snd_timer),
+            "click": tk.BooleanVar(value=self.snd_click),
+            "bounce": tk.BooleanVar(value=self.snd_bounce),
+        }
+        snd = tk.Menu(m, tearoff=0)
+        snd.add_checkbutton(label="Arrival clip (timer)", variable=self._snd_vars["timer"],
+                            command=lambda: self._set_snd("timer"))
+        snd.add_checkbutton(label="Click clip", variable=self._snd_vars["click"],
+                            command=lambda: self._set_snd("click"))
+        snd.add_checkbutton(label="Bounce boing", variable=self._snd_vars["bounce"],
+                            command=lambda: self._set_snd("bounce"))
+        m.add_cascade(label="🔊  Sounds", menu=snd)
+
         m.add_separator()
         m.add_command(label="✖  Quit Sunny Bad Buddy Timer", command=self._quit)
         m.add_separator()
         m.add_command(label=f"v{__version__}", state="disabled")
         self.menu = m
 
-    def _toggle_sound(self):
-        self.muted = not self._sound_var.get()
-        print(f"[sunny] sounds {'off' if self.muted else 'on'}", flush=True)
+    def _set_snd(self, cat):
+        on = self._snd_vars[cat].get()
+        setattr(self, "snd_" + cat, on)
+        print(f"[sunny] {cat} sound {'on' if on else 'off'}", flush=True)
+
+    def _toggle_lead(self, minutes):
+        if self._lead_vars[minutes].get():
+            self.lead_mins.add(minutes)
+        else:
+            self.lead_mins.discard(minutes)
+        print(f"[sunny] alarm lead alerts: {sorted(self.lead_mins)} min", flush=True)
 
     # -- scheduling ----------------------------------------------------------
     def _schedule(self, delay_ms):
         if self._tick_job is not None:
             self.root.after_cancel(self._tick_job)
-        self._tick_job = self.root.after(delay_ms, self._tick)
+        self._tick_job = self.root.after(max(0, int(delay_ms)), self._tick)
+
+    def _next_visit_ms(self):
+        if self.anchor_min:
+            return self._ms_to_next_anchor(self.anchor_min)
+        return self.interval_ms
+
+    def _ms_to_next_anchor(self, n):
+        """Milliseconds until the next multiple of n minutes past the hour
+        (n = 60 gives the top of the hour)."""
+        now = datetime.now()
+        mins = now.minute + now.second / 60.0 + now.microsecond / 6e7
+        nxt = (int(mins // n) + 1) * n
+        return int((nxt - mins) * 60_000)
 
     def _log_next(self, delay_ms):
-        mins = delay_ms / 60000
-        print(f"[sunny] next visit in ~{mins:.0f} min", flush=True)
+        when = (datetime.now() + timedelta(milliseconds=delay_ms)).strftime("%I:%M %p").lstrip("0")
+        print(f"[sunny] next visit ~{delay_ms/60000:.0f} min (at {when})", flush=True)
 
     def _tick(self):
         self._appear()
-        self._schedule(self.interval_ms)
-        self._log_next(self.interval_ms)
+        ms = self._next_visit_ms()
+        self._schedule(ms)
+        self._log_next(ms)
 
     def _set_interval(self, n):
+        self.anchor_min = None
         self.every_min = n
         self.interval_ms = int(n * 60_000)
         self._schedule(self.interval_ms)
-        print(f"[sunny] interval set to {n} min", flush=True)
+        print(f"[sunny] remind every {n} min (from now)", flush=True)
+
+    def _set_anchor(self, n):
+        self.anchor_min = n
+        ms = self._ms_to_next_anchor(n)
+        self._schedule(ms)
+        self._log_next(ms)
+        print(f"[sunny] remind on the clock, every {n} min", flush=True)
+
+    # -- alarms & reminders --------------------------------------------------
+    def _schedule_pop(self, when, message):
+        ms = int((when - datetime.now()).total_seconds() * 1000)
+        if ms < 0:
+            return
+        self._event_jobs.append(self.root.after(ms, lambda: self._appear(message)))
+
+    @staticmethod
+    def _parse_time(s):
+        s = s.strip().lower().replace(".", "")
+        t = None
+        for fmt in ("%I:%M %p", "%I:%M%p", "%H:%M", "%I %p", "%I%p", "%H"):
+            try:
+                t = datetime.strptime(s, fmt); break
+            except ValueError:
+                t = None
+        if t is None:
+            return None
+        now = datetime.now()
+        when = now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+        return when + timedelta(days=1) if when <= now else when
+
+    def _set_alarm(self):
+        s = simpledialog.askstring(
+            "Set an alarm", "Alarm time (e.g. 2:30 pm or 14:30):", parent=self.root)
+        if not s:
+            return
+        when = self._parse_time(s)
+        if when is None:
+            messagebox.showerror("Sunny", "Couldn't read that time.", parent=self.root)
+            return
+        shown = when.strftime("%I:%M %p").lstrip("0")
+        self._schedule_pop(when, f"⏰ Alarm!\n{shown}")
+        for L in sorted(self.lead_mins):
+            self._schedule_pop(when - timedelta(minutes=L), f"{L} min\nto {shown}")
+        extra = ""
+        if self.lead_mins:
+            extra = " (+ " + ", ".join(f"{L}m" for L in sorted(self.lead_mins)) + " before)"
+        print(f"[sunny] alarm set for {shown}{extra}", flush=True)
+
+    def _set_reminder(self):
+        mins = simpledialog.askinteger(
+            "Set a reminder", "Remind me in how many minutes?",
+            parent=self.root, minvalue=1, maxvalue=1440)
+        if not mins:
+            return
+        note = simpledialog.askstring(
+            "Set a reminder", "Note (optional):", parent=self.root) or "Reminder!"
+        self._schedule_pop(datetime.now() + timedelta(minutes=mins), f"🔔 {note}"[:40])
+        print(f"[sunny] reminder in {mins} min: {note}", flush=True)
 
     # -- show / hide ---------------------------------------------------------
-    def _appear(self):
-        self.canvas.itemconfigure(self.bubble_text, text=random.choice(HYPE_LINES))
+    def _appear(self, message=None):
+        self.canvas.itemconfigure(self.bubble_text,
+                                  text=message or random.choice(HYPE_LINES))
         left, top, right, bottom = self._work_area()
         self.bounds = (left, top, right, bottom)
         # start near the bottom-right corner, then float across the screen
@@ -507,7 +645,7 @@ class SunBuddy:
         self.win.deiconify()
         self.win.lift()
         self.win.attributes("-topmost", True)
-        self._play_sound(TIMER_SOUND, "sunnytimer")
+        self._play_sound(TIMER_SOUND, "sunnytimer", "timer")
         self.root.after(5200, lambda: self._stop_one("sunnytimer"))  # ~5s cap
 
         # drift up-and-to-the-left with a light spin
@@ -592,6 +730,12 @@ class SunBuddy:
                 mag = min(0.42, 0.16 + speed / 2800.0)
                 self.squish = {"axis": hit, "t": 0.0, "dur": 0.17, "mag": mag}
 
+            # beach-ball boing on a solid hit (with a short cooldown)
+            self._bounce_cool -= 1
+            if hit and speed > 160 and self._bounce_cool <= 0:
+                self._play_sound(BOUNCE_SOUND, "sunnybounce", "bounce")
+                self._bounce_cool = 9
+
             try:
                 self.win.geometry(f"+{int(self.px)}+{int(self.py)}")
             except tk.TclError:
@@ -668,14 +812,14 @@ class SunBuddy:
 
     def _play_click_then_long(self):
         """Short clip immediately, then the long clip right after it."""
-        self._play_sound(CLICK_SOUND, "sunnyclick")
+        self._play_sound(CLICK_SOUND, "sunnyclick", "click")
         if self._seq_job is not None:
             self.root.after_cancel(self._seq_job)
         self._seq_job = self.root.after(
-            self.CLICK_LEN_MS, lambda: self._play_sound(TIMER_SOUND, "sunnytimer"))
+            self.CLICK_LEN_MS, lambda: self._play_sound(TIMER_SOUND, "sunnytimer", "click"))
 
     def _smack(self, event):
-        # right-click: whack the beach ball. Each hit ADDS momentum + a random
+        # left-click: whack the beach ball. Each hit ADDS momentum + a random
         # spin, pushed away from whichever side you struck, so rapid clicks
         # build up speed and spin.
         self._play_click_then_long()
@@ -709,10 +853,42 @@ class SunBuddy:
 
     def _quit(self):
         self._stop_sounds()
+        if self.tray is not None:
+            try:
+                self.tray.stop()
+            except Exception:
+                pass
         try:
             self.root.destroy()
         except tk.TclError:
             pass
+
+    # -- system tray (optional) ----------------------------------------------
+    def _start_tray(self):
+        """A hidden-away tray icon so Sunny is always reachable. Needs the
+        optional 'pystray' package; silently skipped if it isn't available."""
+        try:
+            import threading
+            import pystray
+            from PIL import Image
+        except Exception:
+            return
+        try:
+            image = Image.open(ICON_PATH)
+        except Exception:
+            return
+        menu = pystray.Menu(
+            pystray.MenuItem("Show Sunny now", lambda *_: self.root.after(0, lambda: self._appear())),
+            pystray.MenuItem("Set an alarm…", lambda *_: self.root.after(0, self._set_alarm)),
+            pystray.MenuItem("Set a reminder…", lambda *_: self.root.after(0, self._set_reminder)),
+            pystray.MenuItem("Quit", lambda *_: self.root.after(0, self._quit)),
+        )
+        try:
+            self.tray = pystray.Icon("sunny", image, "Sunny Bad Buddy Timer", menu)
+            threading.Thread(target=self.tray.run, daemon=True).start()
+            print("[sunny] tray icon active", flush=True)
+        except Exception:
+            self.tray = None
 
     # -- run -----------------------------------------------------------------
     def _pulse(self):
@@ -735,6 +911,7 @@ class SunBuddy:
             signal.signal(signal.SIGINT, self._on_sigint)
         except (ValueError, ImportError):
             pass  # not on the main thread / unsupported -> menu Quit still works
+        self._start_tray()
         self._pulse()
         try:
             self.root.mainloop()
