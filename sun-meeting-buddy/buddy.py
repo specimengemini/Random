@@ -29,7 +29,7 @@ import tkinter as tk
 from tkinter import simpledialog, messagebox
 from datetime import datetime, timedelta
 
-__version__ = "2.13  (tray, alarms, sounds)"
+__version__ = "2.14  (bounce fade + tray click)"
 
 # When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
 # otherwise they sit next to this script.
@@ -79,6 +79,7 @@ class SunBuddy:
         self.lead_mins = set()       # extra "N min before" alerts for alarms
         self._event_jobs = []        # pending alarm / reminder timers
         self._bounce_cool = 0        # frames until the bounce sound may fire again
+        self._bounce_vol = 1.0       # each successive boing halves; reset on a hit
         self.tray = None             # system-tray icon, if available
 
         self.root = tk.Tk()
@@ -140,10 +141,12 @@ class SunBuddy:
         return {"timer": self.snd_timer, "click": self.snd_click,
                 "bounce": self.snd_bounce}.get(cat, True)
 
-    def _play_sound(self, path, alias, cat="timer"):
-        """Play an mp3/wav clip, non-blocking, best-effort per platform."""
+    def _play_sound(self, path, alias, cat="timer", volume=1.0):
+        """Play an mp3/wav clip, non-blocking, best-effort per platform.
+        `volume` is 0.0–1.0 (honored via MCI on Windows, afplay/ffplay elsewhere)."""
         if not self._snd_enabled(cat) or not os.path.exists(path):
             return
+        volume = max(0.0, min(1.0, volume))
         try:
             if sys.platform.startswith("win"):
                 # MCI plays mp3 (winsound is wav-only). Reopen each time so the
@@ -152,9 +155,11 @@ class SunBuddy:
                 mci = ctypes.windll.winmm.mciSendStringW
                 mci(f"close {alias}", None, 0, None)
                 mci(f'open "{path}" alias {alias}', None, 0, None)
+                if volume < 0.999:
+                    mci(f"setaudio {alias} volume to {int(volume * 1000)}", None, 0, None)
                 mci(f"play {alias} from 0", None, 0, None)
             elif sys.platform == "darwin":
-                subprocess.Popen(["afplay", path],
+                subprocess.Popen(["afplay", "-v", f"{volume:.3f}", path],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
                 for pl in ("ffplay", "mpg123", "cvlc", "paplay"):
@@ -162,7 +167,8 @@ class SunBuddy:
                     if not exe:
                         continue
                     if pl == "ffplay":
-                        cmd = [exe, "-nodisp", "-autoexit", "-loglevel", "quiet", path]
+                        cmd = [exe, "-nodisp", "-autoexit", "-loglevel", "quiet",
+                               "-volume", str(int(volume * 100)), path]
                     elif pl == "cvlc":
                         cmd = [exe, "--play-and-exit", "--intf", "dummy", path]
                     else:
@@ -670,6 +676,7 @@ class SunBuddy:
         self.vx, self.vy = vx, vy
         if omega is not None:
             self.omega = omega
+        self._bounce_vol = 1.0       # fresh launch -> loud first boing again
         self.state = "roam"
         if self._anim_job is None:
             self._animate()
@@ -679,6 +686,7 @@ class SunBuddy:
         self.vx += dvx
         self.vy += dvy
         self.omega += domega
+        self._bounce_vol = 1.0       # a fresh whack resets the boing volume
         sp = math.hypot(self.vx, self.vy)
         if sp > self.MAX_SPEED:
             f = self.MAX_SPEED / sp
@@ -730,11 +738,14 @@ class SunBuddy:
                 mag = min(0.42, 0.16 + speed / 2800.0)
                 self.squish = {"axis": hit, "t": 0.0, "dur": 0.17, "mag": mag}
 
-            # beach-ball boing on a solid hit (with a short cooldown)
+            # beach-ball boing on a solid hit; each successive boing is half as
+            # loud as the last (resets to full on a fresh click/launch) so the
+            # rapid settling bounces fade out instead of spamming.
             self._bounce_cool -= 1
-            if hit and speed > 160 and self._bounce_cool <= 0:
-                self._play_sound(BOUNCE_SOUND, "sunnybounce", "bounce")
-                self._bounce_cool = 9
+            if hit and speed > 140 and self._bounce_cool <= 0 and self._bounce_vol >= 0.08:
+                self._play_sound(BOUNCE_SOUND, "sunnybounce", "bounce", self._bounce_vol)
+                self._bounce_vol *= 0.5
+                self._bounce_cool = 6
 
             try:
                 self.win.geometry(f"+{int(self.px)}+{int(self.py)}")
@@ -878,7 +889,10 @@ class SunBuddy:
         except Exception:
             return
         menu = pystray.Menu(
-            pystray.MenuItem("Show Sunny now", lambda *_: self.root.after(0, lambda: self._appear())),
+            # default=True -> left-clicking the tray icon shows Sunny
+            pystray.MenuItem("Show Sunny now",
+                             lambda *_: self.root.after(0, lambda: self._appear()),
+                             default=True),
             pystray.MenuItem("Set an alarm…", lambda *_: self.root.after(0, self._set_alarm)),
             pystray.MenuItem("Set a reminder…", lambda *_: self.root.after(0, self._set_reminder)),
             pystray.MenuItem("Quit", lambda *_: self.root.after(0, self._quit)),

@@ -22,7 +22,9 @@ stays upright as he spins.
 | **Right-click** him | Opens his options menu (below) |
 | **Esc** | Sends him away until the next visit |
 
-He also gives a **boing** each time he bounces off a wall or corner.
+He also gives a **boing** each time he bounces off a wall or corner — each
+successive boing is half as loud as the last (resetting when you click him), so
+the rapid settling bounces fade out instead of spamming.
 
 **Options menu** (right-click):
 
@@ -45,9 +47,9 @@ He quietly retreats after a minute if you ignore him (configurable with
 
 If [`pystray`](https://pypi.org/project/pystray/) is installed (`pip install
 pystray`), Sunny also tucks a **system-tray icon** into your notification area,
-so he's always reachable even while hidden — click it to show him now, set an
-alarm/reminder, or quit. It's skipped silently if pystray isn't installed; the
-bundled `.exe` includes it.
+so he's always reachable even while hidden — **left-click it to show him now**,
+or right-click for set-alarm / set-reminder / quit. It's skipped silently if
+pystray isn't installed; the bundled `.exe` includes it.
 
 ### His sounds
 
@@ -72,7 +74,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.13  (tray, alarms, sounds)
+Sunny Bad Buddy Timer v2.14  (bounce fade + tray click)
 ```
 It's also shown at the **bottom of his right-click menu** (handy when you
 launched him by double-click and have no terminal), and on the first line when
