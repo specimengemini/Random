@@ -28,7 +28,7 @@ import sys
 import tkinter as tk
 from datetime import datetime
 
-__version__ = "2.9  (longer sola + click combo)"
+__version__ = "2.10  (belly clock)"
 
 # When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
 # otherwise they sit next to this script.
@@ -291,8 +291,23 @@ class SunBuddy:
             cx, pad + bubble_h // 2 - 2, text="", width=bubble_w - 20,
             font=("Helvetica", 10, "bold"), fill=BUBBLE_INK, justify="center")
         # mascot
-        self.mascot_img = c.create_image(
-            cx, pad + bubble_h + gap + mh // 2, image=self.photo)
+        self.mascot_cy = pad + bubble_h + gap + mh // 2
+        self.mascot_img = c.create_image(cx, self.mascot_cy, image=self.photo)
+
+        # live clock on his belly (his center = belly, and he spins about it,
+        # so a clock pinned here stays upright and readable)
+        clock_cy = self.mascot_cy + int(0.04 * self.mascot_h)
+        fs = max(9, round(self.mascot_h * 0.058))
+        # create the text first with the widest value, then size the pill to it
+        self.clock_text = c.create_text(
+            cx, clock_cy, text="00:00:00", fill="#FFE08A",
+            font=("Courier", fs, "bold"))
+        x0, y0, x1, y1 = c.bbox(self.clock_text)
+        px_, py_ = 10, 5
+        self.clock_bg = self._rrect(
+            c, x0 - px_, y0 - py_, x1 + px_, y1 + py_,
+            r=(y1 - y0) // 2 + py_, fill="#241A05", outline="#F5A623", width=2)
+        c.tag_raise(self.clock_text)   # keep the digits above the pill
 
         c.configure(cursor="hand2")
         c.bind("<Button-1>", self._open_menu)   # left-click: options menu
@@ -302,6 +317,24 @@ class SunBuddy:
         self._build_menu()
         if self.transparent_ok and self.want_shadow:
             self._build_shadow()
+        self._clock_tick()
+
+    def _rrect(self, c, x0, y0, x1, y1, r, **kw):
+        """Create a rounded rectangle (returns the polygon id)."""
+        pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r,
+               x1, y1, x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r,
+               x0, y0 + r, x0, y0]
+        return c.create_polygon(pts, smooth=True, **kw)
+
+    def _clock_tick(self):
+        """Update the belly clock and re-schedule on the next second."""
+        try:
+            now = datetime.now()
+            self.canvas.itemconfigure(
+                self.clock_text, text=now.strftime("%I:%M:%S").lstrip("0"))
+        except tk.TclError:
+            return
+        self.root.after(1000 - now.microsecond // 1000, self._clock_tick)
 
     def _build_shadow(self):
         """A soft ground shadow that tracks Sunny and scales with his height.
