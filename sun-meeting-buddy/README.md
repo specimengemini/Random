@@ -53,7 +53,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.10  (belly clock)
+Sunny Bad Buddy Timer v2.11  (belly clock, HH:MM)
 ```
 It's also shown at the **bottom of his left-click menu** (handy when you
 launched him by double-click and have no terminal), and on the first line when

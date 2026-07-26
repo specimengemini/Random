@@ -28,7 +28,7 @@ import sys
 import tkinter as tk
 from datetime import datetime
 
-__version__ = "2.10  (belly clock)"
+__version__ = "2.11  (belly clock, HH:MM)"
 
 # When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
 # otherwise they sit next to this script.
@@ -300,7 +300,7 @@ class SunBuddy:
         fs = max(9, round(self.mascot_h * 0.058))
         # create the text first with the widest value, then size the pill to it
         self.clock_text = c.create_text(
-            cx, clock_cy, text="00:00:00", fill="#FFE08A",
+            cx, clock_cy, text="00:00", fill="#FFE08A",
             font=("Courier", fs, "bold"))
         x0, y0, x1, y1 = c.bbox(self.clock_text)
         px_, py_ = 10, 5
@@ -331,7 +331,7 @@ class SunBuddy:
         try:
             now = datetime.now()
             self.canvas.itemconfigure(
-                self.clock_text, text=now.strftime("%I:%M:%S").lstrip("0"))
+                self.clock_text, text=now.strftime("%I:%M").lstrip("0"))
         except tk.TclError:
             return
         self.root.after(1000 - now.microsecond // 1000, self._clock_tick)
