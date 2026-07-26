@@ -23,8 +23,8 @@ stays upright as he spins.
 | **Esc** | Sends him away until the next visit |
 
 He also gives a **boing** each time he bounces off a wall or corner — each
-successive boing is half as loud as the last (resetting when you click him), so
-the rapid settling bounces fade out instead of spamming.
+successive boing is quieter than the last (resetting when you click him), so the
+rapid settling bounces fade out instead of spamming.
 
 **Options menu** (right-click):
 
@@ -74,7 +74,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.14  (bounce fade + tray click)
+Sunny Bad Buddy Timer v2.15  (real bounce fade)
 ```
 It's also shown at the **bottom of his right-click menu** (handy when you
 launched him by double-click and have no terminal), and on the first line when

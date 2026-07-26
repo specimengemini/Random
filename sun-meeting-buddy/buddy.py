@@ -19,17 +19,20 @@ Usage:
 """
 
 import argparse
+import array
 import math
 import os
 import random
 import shutil
 import subprocess
 import sys
+import tempfile
+import wave
 import tkinter as tk
 from tkinter import simpledialog, messagebox
 from datetime import datetime, timedelta
 
-__version__ = "2.14  (bounce fade + tray click)"
+__version__ = "2.15  (real bounce fade)"
 
 # When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
 # otherwise they sit next to this script.
@@ -79,7 +82,8 @@ class SunBuddy:
         self.lead_mins = set()       # extra "N min before" alerts for alarms
         self._event_jobs = []        # pending alarm / reminder timers
         self._bounce_cool = 0        # frames until the bounce sound may fire again
-        self._bounce_vol = 1.0       # each successive boing halves; reset on a hit
+        self._bounce_idx = 0         # which fade step the next boing uses
+        self._bounce_files = []      # pre-attenuated bounce WAVs (one per level)
         self.tray = None             # system-tray icon, if available
 
         self.root = tk.Tk()
@@ -118,6 +122,7 @@ class SunBuddy:
         self.shadow_alpha_ok = False
 
         self._build_window()
+        self._prep_bounce_levels()
 
         first = 300 if show_now else self.interval_ms
         self._schedule(first)
@@ -140,6 +145,65 @@ class SunBuddy:
             return False
         return {"timer": self.snd_timer, "click": self.snd_click,
                 "bounce": self.snd_bounce}.get(cat, True)
+
+    # Volume of each successive boing after a click (smooth fade, then silent).
+    BOUNCE_LEVELS = [1.0, 0.62, 0.4, 0.26, 0.16, 0.1, 0.06]
+
+    def _prep_bounce_levels(self):
+        """Pre-render the bounce WAV at each fade level, since per-play volume
+        isn't reliable on Windows MCI. Plays the right file via winsound."""
+        try:
+            with wave.open(BOUNCE_SOUND, "rb") as w:
+                params = w.getparams()
+                samples = array.array("h")
+                samples.frombytes(w.readframes(w.getnframes()))
+            tmpdir = tempfile.mkdtemp(prefix="sunny-boing-")
+            files = []
+            for i, vol in enumerate(self.BOUNCE_LEVELS):
+                scaled = array.array("h", (int(s * vol) for s in samples))
+                path = os.path.join(tmpdir, f"b{i}.wav")
+                with wave.open(path, "wb") as ww:
+                    ww.setparams(params)
+                    ww.writeframes(scaled.tobytes())
+                files.append(path)
+            self._bounce_files = files
+        except Exception:
+            self._bounce_files = []
+
+    def _play_wav(self, path):
+        """Play a WAV file, non-blocking (reliable on every platform)."""
+        try:
+            if sys.platform.startswith("win"):
+                import winsound
+                winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["afplay", path],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                for pl in ("paplay", "aplay", "ffplay"):
+                    exe = shutil.which(pl)
+                    if not exe:
+                        continue
+                    cmd = ([exe, "-nodisp", "-autoexit", "-loglevel", "quiet", path]
+                           if pl == "ffplay" else [exe, path])
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    break
+        except Exception:
+            pass
+
+    def _play_bounce(self):
+        """One boing at the current fade level; each call steps quieter."""
+        if not self._snd_enabled("bounce"):
+            return
+        idx = self._bounce_idx
+        self._bounce_idx += 1
+        if idx >= len(self.BOUNCE_LEVELS):
+            return                                   # faded to silence
+        if self._bounce_files:
+            self._play_wav(self._bounce_files[idx])
+        else:
+            self._play_sound(BOUNCE_SOUND, "sunnybounce", "bounce",
+                             self.BOUNCE_LEVELS[idx])
 
     def _play_sound(self, path, alias, cat="timer", volume=1.0):
         """Play an mp3/wav clip, non-blocking, best-effort per platform.
@@ -676,7 +740,7 @@ class SunBuddy:
         self.vx, self.vy = vx, vy
         if omega is not None:
             self.omega = omega
-        self._bounce_vol = 1.0       # fresh launch -> loud first boing again
+        self._bounce_idx = 0         # fresh launch -> loud first boing again
         self.state = "roam"
         if self._anim_job is None:
             self._animate()
@@ -686,7 +750,7 @@ class SunBuddy:
         self.vx += dvx
         self.vy += dvy
         self.omega += domega
-        self._bounce_vol = 1.0       # a fresh whack resets the boing volume
+        self._bounce_idx = 0         # a fresh whack resets the boing volume
         sp = math.hypot(self.vx, self.vy)
         if sp > self.MAX_SPEED:
             f = self.MAX_SPEED / sp
@@ -738,14 +802,13 @@ class SunBuddy:
                 mag = min(0.42, 0.16 + speed / 2800.0)
                 self.squish = {"axis": hit, "t": 0.0, "dur": 0.17, "mag": mag}
 
-            # beach-ball boing on a solid hit; each successive boing is half as
-            # loud as the last (resets to full on a fresh click/launch) so the
-            # rapid settling bounces fade out instead of spamming.
+            # beach-ball boing on a solid hit; each successive boing is quieter
+            # (resets to full on a fresh click/launch) so the rapid settling
+            # bounces fade out instead of spamming.
             self._bounce_cool -= 1
-            if hit and speed > 140 and self._bounce_cool <= 0 and self._bounce_vol >= 0.08:
-                self._play_sound(BOUNCE_SOUND, "sunnybounce", "bounce", self._bounce_vol)
-                self._bounce_vol *= 0.5
-                self._bounce_cool = 6
+            if hit and speed > 140 and self._bounce_cool <= 0:
+                self._play_bounce()
+                self._bounce_cool = 5
 
             try:
                 self.win.geometry(f"+{int(self.px)}+{int(self.py)}")
