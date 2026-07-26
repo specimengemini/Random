@@ -28,7 +28,7 @@ import sys
 import tkinter as tk
 from datetime import datetime
 
-__version__ = "2.11  (belly clock, HH:MM)"
+__version__ = "2.12  (clock tethered to the orb)"
 
 # When bundled by PyInstaller, data files live in a temp dir (sys._MEIPASS);
 # otherwise they sit next to this script.
@@ -214,6 +214,7 @@ class SunBuddy:
             a = base.split()[3].point(lambda p: 255 if p >= 128 else 0)
             base.putalpha(a.filter(ImageFilter.MinFilter(3)))
             self._pil_base = base
+            self.orb_off = self._orb_offset(base)   # orb center vs image center
             # square big enough to hold the mascot at any rotation
             self.frame_sz = int(math.ceil(math.hypot(base.width, base.height)))
             self.mascot_w = self.mascot_h_px = self.frame_sz
@@ -228,6 +229,36 @@ class SunBuddy:
                 img = img.subsample(factor, factor)
             self.photo = img
             self.mascot_w, self.mascot_h_px = img.width(), img.height()
+            self.orb_off = (0.0, 0.0)
+
+    def _orb_offset(self, base):
+        """Locate the round sun-orb's center relative to the image center.
+        The orb is the fattest solid blob, so erode the silhouette until only
+        its core survives (thin rays/legs vanish first) and take that centre."""
+        try:
+            from PIL import ImageFilter
+            m = base.split()[3].point(lambda p: 255 if p > 16 else 0)
+            sw = 120
+            sh = max(1, round(m.height * sw / m.width))
+            m = m.resize((sw, sh))
+            prev = m
+            for _ in range(300):                 # erode to the deepest core
+                er = prev.filter(ImageFilter.MinFilter(3))
+                if er.getbbox() is None:
+                    break
+                prev = er
+            px = prev.load()
+            sx = sy = n = 0
+            for y in range(sh):
+                for x in range(sw):
+                    if px[x, y] > 16:
+                        sx += x; sy += y; n += 1
+            if not n:
+                return (0.0, 0.0)
+            cx, cy = sx / n / sw, sy / n / sh
+            return ((cx - 0.5) * base.width, (cy - 0.5) * base.height)
+        except Exception:
+            return (0.0, 0.0)
 
     def _make_photo(self, angle, sx=1.0, sy=1.0):
         """Render the mascot rotated by `angle` and squished by (sx, sy),
@@ -295,19 +326,18 @@ class SunBuddy:
         self.mascot_img = c.create_image(cx, self.mascot_cy, image=self.photo)
 
         # live clock on his belly (his center = belly, and he spins about it,
-        # so a clock pinned here stays upright and readable)
-        clock_cy = self.mascot_cy + int(0.04 * self.mascot_h)
-        fs = max(9, round(self.mascot_h * 0.058))
-        # create the text first with the widest value, then size the pill to it
+        # so a clock pinned here stays upright and readable). White digits with
+        # a soft dark outline so they read on the bright costume -- no pill.
+        fs = max(10, round(self.mascot_h * 0.075))
+        font = ("Helvetica", fs, "bold")
+        off = max(1, fs // 12)
+        self._shadow_offsets = [(-off, -off), (off, -off), (-off, off), (off, off),
+                                (-off, 0), (off, 0), (0, -off), (0, off)]
+        self._clock_shadows = [c.create_text(0, 0, text="", fill="#2A1E05", font=font)
+                               for _ in self._shadow_offsets]
         self.clock_text = c.create_text(
-            cx, clock_cy, text="00:00", fill="#FFE08A",
-            font=("Courier", fs, "bold"))
-        x0, y0, x1, y1 = c.bbox(self.clock_text)
-        px_, py_ = 10, 5
-        self.clock_bg = self._rrect(
-            c, x0 - px_, y0 - py_, x1 + px_, y1 + py_,
-            r=(y1 - y0) // 2 + py_, fill="#241A05", outline="#F5A623", width=2)
-        c.tag_raise(self.clock_text)   # keep the digits above the pill
+            0, 0, text="", fill="#FFD42A", font=font)   # golden yellow
+        self._position_clock()   # place it on the orb
 
         c.configure(cursor="hand2")
         c.bind("<Button-1>", self._open_menu)   # left-click: options menu
@@ -319,19 +349,29 @@ class SunBuddy:
             self._build_shadow()
         self._clock_tick()
 
-    def _rrect(self, c, x0, y0, x1, y1, r, **kw):
-        """Create a rounded rectangle (returns the polygon id)."""
-        pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r,
-               x1, y1, x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r,
-               x0, y0 + r, x0, y0]
-        return c.create_polygon(pts, smooth=True, **kw)
+    def _position_clock(self):
+        """Pin the clock to the orb's center, rotating with the spin so it
+        stays stuck to the sun as he tumbles (digits kept upright)."""
+        try:
+            ox, oy = self.orb_off
+            th = math.radians(self.angle)
+            c_, s_ = math.cos(th), math.sin(th)
+            bx = self.win_w / 2 + (ox * c_ - oy * s_)
+            by = self.mascot_cy + (ox * s_ + oy * c_)
+            self.canvas.coords(self.clock_text, bx, by)
+            for item, (dx, dy) in zip(self._clock_shadows, self._shadow_offsets):
+                self.canvas.coords(item, bx + dx, by + dy)
+        except tk.TclError:
+            pass
 
     def _clock_tick(self):
         """Update the belly clock and re-schedule on the next second."""
         try:
             now = datetime.now()
-            self.canvas.itemconfigure(
-                self.clock_text, text=now.strftime("%I:%M").lstrip("0"))
+            txt = now.strftime("%I:%M").lstrip("0")
+            for item in self._clock_shadows:
+                self.canvas.itemconfigure(item, text=txt)
+            self.canvas.itemconfigure(self.clock_text, text=txt)
         except tk.TclError:
             return
         self.root.after(1000 - now.microsecond // 1000, self._clock_tick)
@@ -569,6 +609,7 @@ class SunBuddy:
 
     def _render_frame(self, dt):
         """Swap the canvas image to match the current spin/squish."""
+        self._position_clock()   # keep the clock stuck to the orb center
         if not self.spin_ok:
             return
         sq = self.squish

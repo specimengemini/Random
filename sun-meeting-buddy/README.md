@@ -10,8 +10,9 @@ bubble.
 When the timer's up he flies in playing a **~5-second hype clip** and floats
 around the screen like a light beach ball — spinning, ping-ponging off the
 edges, **squishing** when he hits a wall, and casting a **ground shadow** that
-grows and fades with his height — until he settles. A **live clock** ticks on
-his belly (and stays upright even while he spins).
+grows and fades with his height — until he settles. A **live clock** (HH:MM in
+golden yellow) is pinned to the center of his sun orb — it rides along and
+stays upright as he spins.
 
 ### How to play with him
 
@@ -53,7 +54,7 @@ python buddy.py --version
 ```
 The current build prints:
 ```
-Sunny Bad Buddy Timer v2.11  (belly clock, HH:MM)
+Sunny Bad Buddy Timer v2.12  (clock tethered to the orb)
 ```
 It's also shown at the **bottom of his left-click menu** (handy when you
 launched him by double-click and have no terminal), and on the first line when
